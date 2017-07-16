@@ -1,9 +1,7 @@
-Cock Hero Machine
+Cock Hero Machine 
+
+cockheromachine.blogspot.com
 
 Contacts:
 
 cockheromachine@gmail.com
-
-For more informations visit:
-
-cockheromachine.blogspot.com
