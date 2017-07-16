@@ -1,0 +1,20 @@
+Pause =      Numpad0
+Slowdown =   Numpad1
+Speedup =    Numpad2
+Screenshot = F9
+Refresh =    F10
+***
+
+Key examples:
+1,2,3...
+A,B,C...
+F1,F2,F3...
+Numpad0,Numpad1,Numpad2...
+Right,Left,Down,Up
+Space
+Back
+Tab
+Rshift
+Lshift
+Rcontrol
+Lcontrol
