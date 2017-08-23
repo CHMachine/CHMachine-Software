@@ -1,4 +1,4 @@
-﻿import cv2
+import cv2
 import numpy as np
 from PIL import ImageGrab
 from tkinter import *
@@ -10,11 +10,13 @@ import threading
 import serial.tools.list_ports
 import pygame
 from serial import SerialTimeoutException
-version = '0.9.1'
+
+version = '0.9.2'
+
 serialbaud=9600
 streamwindowssizex=220
 streamwindowssizey=220
-line=("")
+
 
 def keysetup(file):
     global pausebutton
@@ -55,7 +57,7 @@ def keysetup(file):
                 setup.close()          
                 break
     except:
-        print('Cannot open %s, loading default keys...\n' %file)
+        print('Cannot open', file, ', loading default keys...\n')
         
 
 def comportsetup():
@@ -63,6 +65,7 @@ def comportsetup():
     ports = list(serial.tools.list_ports.comports()) # detects available ports
 
     #prints available ports
+    print ('- AVAILABLE PORTS:\n') 
     for p in ports:
         print (p) 
     print('')
@@ -76,57 +79,58 @@ class motorclass():
         self.state=2
         self.tempo=0
         self.savestate=2
-
+        self.tempokeepalive=0
+        self.tempokeepalive_A=0
+        self.tempokeepalive_B=0
+        self.keepalivems=100
+        self.result=0 
+        self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create an array of zeros for the black background
+     
     def detect(self):
         
-        colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-        result=0 
-        
+
         while 1:
-            
-           # lock.acquire()
-            
            
-            while (self.state==5): #detect setup
+            while (self.state==5): # DETECT SETUP
                 arr = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize))))
                 arr = cv2.cvtColor(arr,cv2.COLOR_RGB2BGR)
-                result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED)
+                self.result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED)
                 try:#take care of sliding too fast which result in a shape out of boundaries
-                    if result>0:
-                        print ('%.3f' %(result*100))
+                    if self.result>0:
+                        print ('%.0f %% Match' %(self.result*100))
                     else:
-                        print ('0')
+                        print ('0 % Match')
 
                     
-                    if checkinv.get()==False:
+                    if checkinv==False: #invert flag False
                        
-                        if (result>=treshold):
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-                            cv2.circle(colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
+                        if (self.result>=treshold):#turn on the pin if the match value is over the threshold
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            cv2.circle(self.colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
                             self.tempo=pygame.time.get_ticks()
                     
-                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):   
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):  #turn off the pin some time after the last match is occurred 
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
                 
-                    else:
+                    else: #invert flag True
                     
-                        if (result<=treshold):
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-                            cv2.circle(colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
+                        if (self.result<=treshold):#turn on the pin if the match value is under the threshold
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            cv2.circle(self.colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
                             self.tempo=pygame.time.get_ticks()
                     
-                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):   
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):  #turn off the pin some time after the last match is occurred 
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
                     #centering and overlapping images over background:
                     x_offset=int(streamwindowssizex/2 - xsize) 
                     y_offset=int(streamwindowssizey/2 - ysize) 
-                    colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr   
+                    self.colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr   
                 
                 except:
                     pass
                    
                         
-                cv2.imshow('Stream', colorshow)  #showing image
+                cv2.imshow('Stream', self.colorshow)  #showing image
                 cv2.waitKey(1)
      
            
@@ -134,63 +138,80 @@ class motorclass():
            
            
            
-            while (self.state==1): #detect
+            while (self.state==1): ################# DETECT
                 
                 arr = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize))))
                 arr=cv2.cvtColor(arr,cv2.COLOR_RGB2BGR)
-                result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED)
+                self.result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED)
                 try:#take care of sliding too fast which result in a shape out of boundaries
-                    if result>0:
-                        print ('%.3f' %(result*100))
 
-                    else:
-                        print ('0')
 
-                    if checkinv.get()==False:
+                    if checkinv==False: ###invert flag False
                         
-                        if (result>=treshold):
-
-                            self.PWMpin(speed) 
+                        if (self.result>=treshold):#turn on the pin if the match value is over the threshold
+                            if pygame.time.get_ticks()-self.tempokeepalive_A>=self.keepalivems:#send serial data every 100ms to avoid flooding
+                                self.PWMpin(speed) 
+                                self.tempokeepalive_A=pygame.time.get_ticks()
+                                self.tempokeepalive_B=0
+                                self.tempokeepalive=pygame.time.get_ticks()
                             self.tempo=pygame.time.get_ticks()
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-                            cv2.circle(colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            cv2.circle(self.colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
                                                   
 
-                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar): 
+                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar): #turn off the pin some time after the last match is occurred
 
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background                         
-                            self.PWMpin(floorspeed)
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background  
+                       
+                            if pygame.time.get_ticks()-self.tempokeepalive_B>=self.keepalivems:#send serial data every 100ms to avoid flooding
+                                self.PWMpin(floorspeed)
+                                self.tempokeepalive_B=pygame.time.get_ticks()
+                                self.tempokeepalive_A=0
+                                self.tempokeepalive=pygame.time.get_ticks()
+                         
                           
-                    else:
+                    else:                    ###invert flag True
                         
-                        if (result<=treshold):
-
-                            self.PWMpin(speed) 
+                        if (self.result<=treshold):#turn on the pin if the match value is under the threshold
+                            if pygame.time.get_ticks()-self.tempokeepalive_A>=self.keepalivems:#send serial data every 100ms to avoid flooding
+                                self.PWMpin(speed) 
+                                self.tempokeepalive_A=pygame.time.get_ticks()
+                                self.tempokeepalive_B=0
+                                self.tempokeepalive=pygame.time.get_ticks()
                             self.tempo=pygame.time.get_ticks()
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-                            cv2.circle(colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            cv2.circle(self.colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
                                                   
 
-                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar): 
+                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar): #turn off the pin some time after the last match is occurred
 
-                            colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background                         
-                            self.PWMpin(floorspeed)
+                            if pygame.time.get_ticks()-self.tempokeepalive_B>=self.keepalivems:#send serial data every 100ms to avoid flooding
+                                self.PWMpin(floorspeed)
+                                self.tempokeepalive_B=pygame.time.get_ticks()
+                                self.tempokeepalive_A=0
+                                self.tempokeepalive=pygame.time.get_ticks()
+                                
+
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background                         
+                            
 
                     #centering and overlapping image over background:
                     x_offset=int(streamwindowssizex/2 - xsize) 
                     y_offset=int(streamwindowssizey/2 - ysize) 
-                    colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr  
+                    self.colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr  
                                 
                 except:
-                    pass 
+                    pass
 
                   
-                cv2.imshow('Stream', colorshow)  #showing image
+                cv2.imshow('Stream', self.colorshow)  #showing image
                 cv2.waitKey(1)
 
                 try:
-                   
-                    arduino.write(('V').encode('utf-8')) #keeps the pin on(see arduino code)
+                    if  pygame.time.get_ticks()-self.tempokeepalive>=self.keepalivems: #keeps the pin on(see arduino code)
+
+                        arduino.write(('K').encode('utf-8')) 
+                        self.tempokeepalive=pygame.time.get_ticks()
 
                 except SerialTimeoutException: 
                     print('WRITE TIMEOUT ERROR.')
@@ -202,41 +223,54 @@ class motorclass():
 
 
             
-            while self.state==2:#stop/pause
+            while self.state==2:#################### STOP/PAUSE
                 
                 self.PWMpin('0')
                 
-                pygame.time.wait(100)
+                pygame.time.wait(self.keepalivems)
 
 
 
-            while self.state==3: #always on
-           
+            while self.state==3: ##################### ALWAYS ON
+                        
                 self.PWMpin(speed)
-                pygame.time.wait(100)
+                pygame.time.wait(self.keepalivems)
                   
                   
                       
 
-            while self.state==4:#pulse
+            while self.state==4:######################### PULSE
+                
+                self.tempo=pygame.time.get_ticks()
+                self.PWMpin(speed)
 
-                  self.tempo=pygame.time.get_ticks()
-                  while (self.state==4):
-                      self.PWMpin(speed)
-                      pygame.time.wait(10)
-                      if (pygame.time.get_ticks()-self.tempo) >= (timeonvar):
-                          self.tempo=pygame.time.get_ticks()
-                          break 
+                while (pygame.time.get_ticks()-self.tempo) < (timeonvar):
+                    pygame.time.wait(1)
+                    if self.state!=4:
+                        break
+                    if (pygame.time.get_ticks()-self.tempokeepalive) >= self.keepalivems:
+                        
+                        arduino.write(('K').encode('utf-8'))
+                        self.tempokeepalive = pygame.time.get_ticks()
 
-                  while (self.state==4):
-                      self.PWMpin(floorspeed)
-                      pygame.time.wait(10)
-                      if (pygame.time.get_ticks()-self.tempo) >= (timeoffvar):
-                          break
-            
-            #lock.release()
+                                   
+                
+                self.tempo=pygame.time.get_ticks()
+                self.PWMpin(floorspeed)
+
+                while (pygame.time.get_ticks()-self.tempo) < (timeoffvar):
+                    pygame.time.wait(1)
+                    if self.state!=4:
+                        break
+                    if (pygame.time.get_ticks()-self.tempokeepalive) >= self.keepalivems:
+                       
+                        arduino.write(('K').encode('utf-8'))
+                        self.tempokeepalive = pygame.time.get_ticks()
+                
+
+                     
            
-    def PWMpin(self, PWM_speed): #set the Pulse Width of the microcontroller pin
+    def PWMpin(self, PWM_speed): #set the PWM of the microcontroller pin
         try:
             arduino.write(('V' + PWM_speed + 'S').encode('utf-8'))
 
@@ -281,66 +315,72 @@ class motorclass():
         self.state=5
         self.savestate=self.state
  
+def serialstartauto(COMstring, baud): 
+
+    global arduino
+    line=('')
+    comentry.delete(0, 'end')  # delete text from the widget  
+    root.focus() #remove focus from the entry widget
+    
+    
+    resetGUI()
+    motor.stop() 
+         
+    try:
+        arduino.close()
+        pygame.time.wait(750)
+    except:
+        pass
+    print("Looking for the CH Machine, PLEASE WAIT...\n")
+    for p in ports: 
+        try:
+                
+            arduino = serial.Serial('COM' + (p[0][3:5]), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout incase we send bad data
+            print ('COM' + p[0][3:5] + '...')
+            pygame.time.wait(1000)# wait for arduino to initialize
+            arduino.flushInput()
+            arduino.flushOutput()
+            pygame.time.wait(1000)
+            arduino.write(('T').encode('utf-8'))#
+            pygame.time.wait(250)
+
+            line = arduino.read(6).decode(encoding='UTF-8',errors='strict')
+            #print (line)
+            
+            if line.find('connOK')!=-1:#
+                print("CHM CONNECTED!")
+                arduino.write(('V0S').encode('utf-8'))
+                print ('COM' + p[0][3:5] + '  - Initialization Complete.')
+                break
+            else: #
+                print ('wrong connection.')
+                arduino.close()
+                pygame.time.wait(250)  
+                   
+        except:
+            print ('exception')
+
+    if line.find('connOK')==-1:
+        print ('\nCH Machine NOT found, check out the connection.\n')
+
 
 def serialstart(COMstring, baud):
     global arduino
+    line=('')
     comentry.delete(0, 'end')  # delete text from the widget  
     root.focus() #remove focus from the entry widget
     
     
     if COMstring ==(''): #autofinding correct COM port
+        serialstartauto(COMstring, baud)
 
-        checkAO.deselect()
-        checkPUL.deselect()
-        checkDET.deselect()
-        checkset.deselect()
-        motor.stop() 
-         
-        try:
-            arduino.close()
-            pygame.time.wait(750)
-        except:
-            pass
-        print("\nLooking for the CH Machine, PLEASE WAIT...\n")
-        for p in ports: 
-            try:
-                
-                arduino = serial.Serial('COM' + (p[0][3:5]), 9600, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout incase we send bad data
-                print ('COM' + p[0][3:5] + '...')
-                pygame.time.wait(800)# wait for arduino to initialize
-                arduino.flushInput()
-                arduino.flushOutput()
-                pygame.time.wait(500)
-                arduino.write(('TTT').encode('utf-8'))#
-                pygame.time.wait(250)#
-                line = arduino.readline().decode(encoding='UTF-8',errors='strict')#
-                #print (line)
-            
-                if line.find('connOK')!=-1:#
-                    print("CHM CONNECTED!")
-                    arduino.write(('V0S').encode('utf-8'))
-                    print ('COM' + p[0][3:5] + '  - Initialization Complete.')
-                    break
-                else: #
-                    print ('wrong connection.')
-                    arduino.close()
-                    pygame.time.wait(250)  
-                   
-            except:
-                print ('exception')
-
-        if line.find('connOK')==-1:
-            print ('\nCH Machine NOT found, check out the connection.\n')
-
+    
         
     #manual COM port:
-    if COMstring.isdigit()==True:
+    elif COMstring.isdigit()==True:
 
         print ('COM' + COMstring + ' - Initializing...')
-        checkAO.deselect()
-        checkPUL.deselect()
-        checkDET.deselect()
-        checkset.deselect()
+        resetGUI()
         motor.stop()   
          
         try:
@@ -365,7 +405,7 @@ def serialstart(COMstring, baud):
             else:
                 print('No port found.')
                 
-    if (COMstring !=('') and COMstring.isdigit()==False):
+    elif (COMstring !=('') and COMstring.isdigit()==False):
         print('Digits only')
 
             
@@ -390,6 +430,7 @@ def onKeyDown(event):
     
     # never put any condition first other than event.key 
     if event.Key == ('Return'):
+        
         if comentry==root.focus_get() and comentry.get()!=(''):
             serialstart(comtext.get(), serialbaud)
        
@@ -397,7 +438,7 @@ def onKeyDown(event):
     if event.Key == (slowdownbutton):
         
         speedint=int(speed)
-        if (checkAOVar.get()==True or checkPULVar.get()==True):
+        if (checkAOVar.get()==True or checkPULVar.get()==True or checkDETVar.get()==True or checkSETVar.get()==True):
             if speedint>10:
                 speedint -= 10
                 motorspeed.set(speedint)
@@ -411,7 +452,7 @@ def onKeyDown(event):
 
     if event.Key == (speedupbutton): 
         speedint=int(speed)
-        if (checkAOVar.get()==True or checkPULVar.get()==True):
+        if (checkAOVar.get()==True or checkPULVar.get()==True or checkDETVar.get()==True or checkSETVar.get()==True):
             if speedint <= 245:
                 speedint += 10
                 motorspeed.set(speedint)
@@ -489,16 +530,17 @@ def slidersize(value):
 def alwaysONtick():
     
     try:
-        arduino.write(('V').encode('utf-8'))
-        checkDET.deselect()
-        checkPUL.deselect()
-        checkset.deselect()
+        arduino.write(('K').encode('utf-8'))
 
-        if checkAOVar.get()==True:
-            motor.alwayson()
-        
+
         if checkAOVar.get()==False:
             motor.stop()
+       
+        if checkAOVar.get()==True:
+            resetGUI()
+            checkAO.select()
+            motor.alwayson()
+        
     except:
         print('No serial connection')
         checkAO.deselect()
@@ -508,21 +550,21 @@ def detecttick():
      
 
      if (pos==None):
-            print('Position? (Press F9 or F10)')
+            print('Position? (Press', screenshotbutton, 'to take a screenshot)')
             checkDET.deselect()
             
 
      else:
         try:
-            arduino.write(('V').encode('utf-8'))
-            checkAO.deselect()
-            checkPUL.deselect()
-            checkset.deselect()
+            arduino.write(('K').encode('utf-8'))
+
         
             if checkDETVar.get()==False:
                 motor.stop()
         
             if checkDETVar.get()==True:
+                resetGUI()
+                checkDET.select()
                 motor.startdetect()
         except:
             print('No serial connection')
@@ -533,19 +575,18 @@ def detectsetup():
      
 
      if (pos==None):
-            print('Position? (Press F9 or F10)')
-            checkset.deselect()
+            print('Position? (Press', screenshotbutton, 'to take a screenshot)')
+            checkSET.deselect()
 
      else:
-        checkAO.deselect()
-        checkPUL.deselect()
-        checkDET.deselect()
-        
+              
 
-        if checksetVar.get()==False:
+        if checkSETVar.get()==False:
             motor.stop()
 
-        if checksetVar.get()==True:
+        if checkSETVar.get()==True:
+            resetGUI()
+            checkSET.select()
             try:
                 arduino.write(('V0S').encode('utf-8'))
             except:
@@ -557,15 +598,15 @@ def detectsetup():
 
 def pulsetick():
     try:
-        arduino.write(('V').encode('utf-8'))
-        checkAO.deselect()
-        checkDET.deselect()
-        checkset.deselect()
+        arduino.write(('K').encode('utf-8'))
+
 
         if checkPULVar.get()==False:
             motor.stop()
         
         if checkPULVar.get()==True:
+            resetGUI()
+            checkPUL.select()
             motor.pulse()
     except:
         print('No serial connection')
@@ -633,6 +674,23 @@ def about():
     button.pack()
 
 
+def alwaysONtop():
+
+    root.wm_attributes("-topmost", not root.wm_attributes("-topmost"))
+
+def resetGUI():
+
+    checkAO.deselect()
+    checkPUL.deselect()
+    checkDET.deselect()
+    checkSET.deselect()
+    
+def inverttick():
+    global checkinv
+    checkinv=not checkinv
+    print(checkinv)
+
+
 
 # TKINTER INTERFACE:    
 
@@ -640,18 +698,24 @@ root= Tk()
 root.withdraw()
 root.resizable(0, 0)
 root.wm_attributes("-topmost", 1)
-root.geometry("540x540")
+root.geometry("540x620")
 root.iconbitmap('favicon.ico')
 
 
 buttonb=Button(root, height=2, width=15, text='-START/PAUSE- \n(numpad 0)', command=lambda:motor.pause())
-buttonb.grid(row = 2, column = 1)
+buttonb.grid(row = 2, column = 1,pady=10)
 
 buttonserial=Button(root,height=1, width=8,text='CONNECT', command=lambda:serialstart(comtext.get(), serialbaud))
 buttonserial.grid(row = 0, column = 2)
 
 buttonabout=Button(root,height=1, width=8,text='About...', command=lambda:about())
 buttonabout.grid(row = 0, column = 5)
+
+
+checkontop=Checkbutton(root,text = 'On top', command=lambda:alwaysONtop())
+checkontop.grid(row = 0, column = 3, sticky=W)
+checkontop.select()
+
 
 comtext = StringVar()
 comentry=Entry(root, textvariable=comtext)
@@ -668,44 +732,51 @@ checkDETVar = IntVar()
 checkDET=Checkbutton(root,text = 'DETECT', command=lambda:detecttick(), variable = checkDETVar)
 checkDET.grid(row = 2, column = 4, sticky=W)
 
-checksetVar = IntVar()
-checkset=Checkbutton(root,text = 'DETECT SETUP', command=lambda:detectsetup(), variable = checksetVar)
-checkset.grid(row = 2, column = 5, sticky=W)
+checkSETVar = IntVar()
+checkSET=Checkbutton(root,text = 'DETECT SETUP', command=lambda:detectsetup(), variable = checkSETVar)
+checkSET.grid(row = 2, column = 5, sticky=W)
 
 checkPULVar = IntVar()
 checkPUL=Checkbutton(root,text = 'PULSE', command=lambda:pulsetick(), variable = checkPULVar)
 checkPUL.grid(row = 2, column = 3, sticky=W)
 
 motorspeed=IntVar(value=10)
-slidera = Scale(root, from_=0, to=255, orient=HORIZONTAL,length=300.00, variable=motorspeed, label='MOTOR SPEED:', command=speedslider)
-slidera.grid(columnspan = 6)
+slidera = Scale(root, from_=0, to=255, orient=HORIZONTAL,length=400.00, variable=motorspeed, label='MOTOR SPEED:', command=speedslider)
+slidera.grid(columnspan = 6,pady=5)
+speed=(str(motorspeed.get()))
 
 timeON=IntVar(value=100)
-sliderb = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=300.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
-sliderb.grid(columnspan = 7)
+sliderb = Scale(root, from_=20, to=1000, orient=HORIZONTAL,length=400.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
+sliderb.grid(columnspan = 7,pady=5)
+timeonvar=timeON.get()
 
 timeOFF=IntVar(value=100)
-sliderc = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=300.00, variable=timeOFF, label='TIME OFF(ms):', command=timeOFFslider)
-sliderc.grid(columnspan = 8)
+sliderc = Scale(root, from_=20, to=1000, orient=HORIZONTAL,length=400.00, variable=timeOFF, label='TIME OFF(ms):', command=timeOFFslider)
+sliderc.grid(columnspan = 8,pady=5)
+timeoffvar=timeOFF.get()
 
-floorspeed=IntVar(value=0)
-sliderd = Scale(root, from_=0, to=255, orient=HORIZONTAL,length=300.00, variable=floorspeed, label='FLOOR SPEED:', command=floorspeedslider)
-sliderd.grid(columnspan = 9)
+floorspeedVAR=IntVar(value=0)
+sliderd = Scale(root, from_=0, to=255, orient=HORIZONTAL,length=400.00, variable=floorspeedVAR, label='FLOOR SPEED:', command=floorspeedslider)
+sliderd.grid(columnspan = 9,pady=5)
+floorspeed=str(floorspeedVAR.get())
 
 sizex=IntVar(value=25)
-slidersizex = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=300.00, variable=sizex, label='Xsize:', command=slidersize)
-slidersizex.grid(columnspan = 10)
-
+slidersizex = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=sizex, label='Xsize:', command=slidersize)
+slidersizex.grid(columnspan = 10,pady=5)
+xsize=sizex.get()*(streamwindowssizex - 20)/200
+    
 sizey=IntVar(value=25)
-slidersizey = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=300.00, variable=sizey, label='Ysize:', command=slidersize)
-slidersizey.grid(columnspan = 11)
+slidersizey = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=sizey, label='Ysize:', command=slidersize)
+slidersizey.grid(columnspan = 11,pady=5)
+ysize=sizey.get()*(streamwindowssizey - 20)/200
 
 tresh=IntVar(value=70)
-slidertresh = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=300.00, variable=tresh, label='TRESHOLD:', command=tresholdslider)
-slidertresh.grid(columnspan = 12)
+slidertresh = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=tresh, label='TRESHOLD:', command=tresholdslider)
+slidertresh.grid(columnspan = 12,pady=5)
+treshold=int(tresh.get())/100
 
-checkinv = IntVar()
-checkinvert=Checkbutton(root,text = 'Invert', variable = checkinv)
+checkinv=False
+checkinvert=Checkbutton(root,text = 'Invert', command=inverttick)
 checkinvert.grid(columnspan = 13)
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
@@ -724,7 +795,18 @@ tmotordetect.start()
 arduino=None
 print('CHMACHINE Ver. %s \n' %version)
 keysetup('setup.txt') #assign keys from setup.txt
-comportsetup() #dlist all available com ports
+
+print('- HOTKEYS:\n')
+print('Pause=',pausebutton)
+print('Slow down=',slowdownbutton)
+print('Speed up=',speedupbutton)
+print('Screenshot=',screenshotbutton)
+print('Screenshot update=',refreshbutton)
+print('')
+print('') 
+
+
+comportsetup() #list all available com ports
 pos=None
 pygame.init()
 hm = pyHook.HookManager() # hooking keyboard
@@ -733,12 +815,3 @@ hm.HookKeyboard()
 pygame.event.pump()
 root.deiconify()
 root.mainloop()
-
-
-
-
-
-    
-
-    
-

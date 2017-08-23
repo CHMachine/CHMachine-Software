@@ -25,7 +25,9 @@ void setup() {
 // the loop routine runs over and over again forever:
 void loop() {
   
-  if (Serial.available() > 2) {
+  if (Serial.available() > 0) {
+
+
 
     if (Serial.peek() == 'V') {      //check for the character that signifies that this will be on
       Serial.read();                 //remove the first character
@@ -34,9 +36,15 @@ void loop() {
       timer = millis();              //reset the timer
     }
 
-    else if (Serial.peek() == 'T') {      //check for the character that signifies that this will be on
+
+    else if (Serial.peek() == 'K') {      //the character K must be sent to reset the timer and keep the analog pin ON
+      Serial.read();                 //remove the first character
+      timer = millis();              //reset the timer
+    }
+
+    else if (Serial.peek() == 'T') {      //check for the character T that estabilish the connection
       Serial.println("connOK");         //send a string
-      while (Serial.available() > 0) 
+      while (Serial.available() > 0)   //clean the serial buffer
         Serial.read(); 
     }
     else
