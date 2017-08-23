@@ -1,15 +1,14 @@
-import cv2
+﻿import cv2
 import numpy as np
 from PIL import ImageGrab
 from tkinter import *
 import win32gui
 import win32con
-import pyHook
+import pyHook # pyhook_py3k is advised
 import serial
 import threading
 import serial.tools.list_ports
 import pygame
-from serial import SerialTimeoutException
 
 version = '0.9.2'
 
@@ -213,7 +212,7 @@ class motorclass():
                         arduino.write(('K').encode('utf-8')) 
                         self.tempokeepalive=pygame.time.get_ticks()
 
-                except SerialTimeoutException: 
+                except serial.SerialTimeoutException: 
                     print('WRITE TIMEOUT ERROR.')
                     arduino.close()
                     self.stop()
@@ -274,7 +273,7 @@ class motorclass():
         try:
             arduino.write(('V' + PWM_speed + 'S').encode('utf-8'))
 
-        except SerialTimeoutException: 
+        except serial.SerialTimeoutException: 
             print('WRITE TIMEOUT ERROR.')
             arduino.close()
             self.stop()
@@ -395,7 +394,7 @@ def serialstart(COMstring, baud):
             arduino.write(('V0S').encode('utf-8'))
             print ('COM' + COMstring + ' - Initialization Complete.')
           
-        except SerialTimeoutException:
+        except serial.SerialTimeoutException:
             print ('COM' + COMstring + ' TIMEOUT EXCEPTION. Try another port.')
             arduino.close()
                 
@@ -427,8 +426,8 @@ def onKeyDown(event):
     #print ('Alt', event.Alt)
     #print ('Transition', event.Transition)
     #print ('---')
-    
-    # never put any condition first other than event.key 
+
+        # never put any condition first other than event.key 
     if event.Key == ('Return'):
         
         if comentry==root.focus_get() and comentry.get()!=(''):
@@ -496,8 +495,7 @@ def onKeyDown(event):
             hwndmatch = win32gui.FindWindow(None,'Match_1')
             rectmatch = win32gui.GetWindowRect(hwndmatch)
             win32gui.SetWindowPos(hwndmatch, win32con.HWND_TOPMOST, rectmatch[0], rectmatch[1], rectmatch[2]-rectmatch[0], rectmatch[3]-rectmatch[1], 0) 
-            
-            
+
                   
     return True
 
@@ -535,11 +533,13 @@ def alwaysONtick():
 
         if checkAOVar.get()==False:
             motor.stop()
+
        
         if checkAOVar.get()==True:
             resetGUI()
             checkAO.select()
             motor.alwayson()
+
         
     except:
         print('No serial connection')
@@ -686,9 +686,9 @@ def resetGUI():
     checkSET.deselect()
     
 def inverttick():
+    
     global checkinv
     checkinv=not checkinv
-    print(checkinv)
 
 
 
@@ -815,3 +815,12 @@ hm.HookKeyboard()
 pygame.event.pump()
 root.deiconify()
 root.mainloop()
+
+
+
+
+
+    
+
+    
+
