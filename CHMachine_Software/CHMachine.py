@@ -248,8 +248,10 @@ class motorclass():
                     if self.state!=4:
                         break
                     if (pygame.time.get_ticks()-self.tempokeepalive) >= self.keepalivems:
-                        
-                        arduino.write(('K').encode('utf-8'))
+                        try:
+                            arduino.write(('K').encode('utf-8'))
+                        except:
+                            pass
                         self.tempokeepalive = pygame.time.get_ticks()
 
                                    
@@ -262,8 +264,11 @@ class motorclass():
                     if self.state!=4:
                         break
                     if (pygame.time.get_ticks()-self.tempokeepalive) >= self.keepalivems:
-                       
-                        arduino.write(('K').encode('utf-8'))
+                        try:
+                            arduino.write(('K').encode('utf-8'))
+                        except:
+                            pass
+
                         self.tempokeepalive = pygame.time.get_ticks()
                 
 
@@ -341,10 +346,9 @@ def serialstartauto(COMstring, baud):
             arduino.flushOutput()
             pygame.time.wait(1000)
             arduino.write(('T').encode('utf-8'))#
-            pygame.time.wait(250)
-
-            line = arduino.read(6).decode(encoding='UTF-8',errors='strict')
-            #print (line)
+            pygame.time.wait(100)
+            if arduino.inWaiting()>0:
+                    line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='strict')   
             
             if line.find('connOK')!=-1:#
                 print("CHM CONNECTED!")
@@ -746,12 +750,12 @@ slidera.grid(columnspan = 6,pady=5)
 speed=(str(motorspeed.get()))
 
 timeON=IntVar(value=100)
-sliderb = Scale(root, from_=20, to=1000, orient=HORIZONTAL,length=400.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
+sliderb = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=400.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
 sliderb.grid(columnspan = 7,pady=5)
 timeonvar=timeON.get()
 
 timeOFF=IntVar(value=100)
-sliderc = Scale(root, from_=20, to=1000, orient=HORIZONTAL,length=400.00, variable=timeOFF, label='TIME OFF(ms):', command=timeOFFslider)
+sliderc = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=400.00, variable=timeOFF, label='TIME OFF(ms):', command=timeOFFslider)
 sliderc.grid(columnspan = 8,pady=5)
 timeoffvar=timeOFF.get()
 

@@ -4,15 +4,14 @@
   cockheromachine@gmail.com
   
   This program is expected to receive over serial an 8bit integer value between the string 'V' and any other string(e.g. V100S) to vary the pulse width accordingly on the analog pin. 
-  The pin PWM goes to 0 after 200ms if no integers are sent.
+  The pin PWM goes to 0 after 200ms if no signal is received.
   
 */
 
 int Value = 0;
 int pin = 5;
 int timelimit = 200;
-long timer = 0;
-
+long unsigned timer = 0;
 
 void setup() {
   // initialize the digital pin as an output.
@@ -30,8 +29,9 @@ void loop() {
 
 
     if (Serial.peek() == 'V') {      //check for the character that signifies that this will be on
-      Serial.read();                 //remove the first character
+      Serial.read();                 //remove the first character(V)
       Value = Serial.parseInt();     //read the value
+      Serial.read();                 //remove the last character(S)
       analogWrite(pin, Value);       // set the state of the PIN
       timer = millis();              //reset the timer
     }
@@ -43,9 +43,10 @@ void loop() {
     }
 
     else if (Serial.peek() == 'T') {      //check for the character T that estabilish the connection
+      Serial.read();   //clean the serial buffer
       Serial.println("connOK");         //send a string
-      while (Serial.available() > 0)   //clean the serial buffer
-        Serial.read(); 
+      
+         
     }
     else
       Serial.read();                 //clear the serial buffer
