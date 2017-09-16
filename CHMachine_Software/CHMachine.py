@@ -319,11 +319,19 @@ class motorclass():
         self.state=5
         self.savestate=self.state
  
-def serialstartauto(COMstring, baud): 
-
+def serialstartauto(baud): 
+    checkAO.configure(state=DISABLED)
+    checkPUL.configure(state=DISABLED)
+    checkDET.configure(state=DISABLED)
+    checkSET.configure(state=DISABLED)
+    buttonserial.configure(state=DISABLED)
+    comentry.insert(END, "PLEASE WAIT...") # insert text into the widget
+    comentry.configure(state=DISABLED)
+    
     global arduino
     line=('')
-    comentry.delete(0, 'end')  # delete text from the widget  
+    portnumber=('')
+    comentry.delete(0, END)  # delete text from the widget from position 0 to the END 
     root.focus() #remove focus from the entry widget
     
     
@@ -337,10 +345,11 @@ def serialstartauto(COMstring, baud):
         pass
     print("Looking for the CH Machine, PLEASE WAIT...\n")
     for p in ports: 
+        
         try:
-                
-            arduino = serial.Serial('COM' + (p[0][3:5]), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout incase we send bad data
-            print ('COM' + p[0][3:5] + '...')
+
+            print (p[0] + '...')
+            arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout incase we send bad data
             pygame.time.wait(1000)# wait for arduino to initialize
             arduino.flushInput()
             arduino.flushOutput()
@@ -353,7 +362,7 @@ def serialstartauto(COMstring, baud):
             if line.find('connOK')!=-1:#
                 print("CHM CONNECTED!")
                 arduino.write(('V0S').encode('utf-8'))
-                print ('COM' + p[0][3:5] + '  - Initialization Complete.')
+                print (p[0] + ' - Initialization Complete.')
                 break
             else: #
                 print ('wrong connection.')
@@ -366,6 +375,17 @@ def serialstartauto(COMstring, baud):
     if line.find('connOK')==-1:
         print ('\nCH Machine NOT found, check out the connection.\n')
 
+    checkAO.configure(state=NORMAL)
+    checkPUL.configure(state=NORMAL)
+    checkDET.configure(state=NORMAL)
+    checkSET.configure(state=NORMAL)
+    buttonserial.configure(state=NORMAL)
+    comentry.configure(state=NORMAL)
+    comentry.delete(0, END) 
+    
+
+    return True
+
 
 def serialstart(COMstring, baud):
     global arduino
@@ -375,7 +395,9 @@ def serialstart(COMstring, baud):
     
     
     if COMstring ==(''): #autofinding correct COM port
-        serialstartauto(COMstring, baud)
+        tserial=threading.Thread(target=serialstartauto, args={serialbaud})
+        tserial.setDaemon(True)
+        tserial.start()
 
     
         
@@ -787,13 +809,12 @@ root.protocol("WM_DELETE_WINDOW", on_closing)
 root.title('CHM ' + version)
 
 
-#THREAD:
+#THREADS:
 
 motor=motorclass()
 tmotordetect=threading.Thread(target=motor.detect, args=())
 tmotordetect.setDaemon(True)
 tmotordetect.start()
-
 
 #INITIALIZING:
 arduino=None
