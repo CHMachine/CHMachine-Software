@@ -104,7 +104,7 @@ void loop() {
     knobstate = 0;
     encoderValue = 0;
 
-    if (Serial.peek() == 'V') {      //check for the character that signifies that this will be on
+    if (Serial.peek() == 'V') {      //The 'V' character preced the PWM value for the PWM pin
       Serial.read();                 //remove the first character(V)
       Value = Serial.parseInt();     //read the value
       Serial.read();                 //remove the last character(S)
@@ -113,13 +113,13 @@ void loop() {
     }
 
 
-    else if (Serial.peek() == 'K') {      //the character K must be sent to reset the timer and keep the analog pin ON
+    else if (Serial.peek() == 'K') {      //the character 'K' reset the timer and keep the analog pin ON (if the connection is lost the pin goes LOW for safety precaution)
       Serial.read();                 //remove the first character
       timer = millis();              //reset the timer
     }
 
-    else if (Serial.peek() == 'T') {      //check for the character T that estabilish the connection
-      Serial.read();   //clean the serial buffer
+    else if (Serial.peek() == 'T') {      //the character 'T' is used to check if the connection is established
+      Serial.read();                      //clean the serial buffer
       Serial.println("connOK");         //send a string
 
 
@@ -130,11 +130,11 @@ void loop() {
 
   }
 
-  if (millis() - timer >= timelimit and knobstate == 0) { //turn off the pin after some time if no data is received
+  if (millis() - timer >= timelimit and knobstate == 0) { //turn off the pin after some time if no character 'K' is received
     analogWrite(pwmpin, 0);
   }
 
-
+////rotary encoder stuffs:
   if (knobstate == 1) {
     updateButton();
 
