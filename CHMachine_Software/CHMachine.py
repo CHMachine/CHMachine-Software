@@ -1,4 +1,4 @@
-import cv2
+﻿import cv2
 import numpy as np
 from PIL import ImageGrab
 from tkinter import *
@@ -9,6 +9,15 @@ import serial
 import threading
 import serial.tools.list_ports
 import pygame
+from win32api import GetSystemMetrics
+import ctypes
+
+try:
+
+    ctypes.windll.user32.SetProcessDPIAware()# Make the application DPI aware to accommodate 4K resolution
+
+except:
+    pass
 
 version = '0.9.3'
 
@@ -291,7 +300,7 @@ class motorclass():
 
         try:
 
-            if (pygame.time.get_ticks()-self.pinresttime) > 5: #limit the serial flooding
+            if (pygame.time.get_ticks()-self.pinresttime) > 5: #limit serial flooding
                 arduino.write(('V' + self.speed + 'S').encode('utf-8'))
                 self.pinresttime=pygame.time.get_ticks()
 
@@ -376,7 +385,7 @@ def serialstartauto(baud):
                pass
 
             print (p[0] + '...')
-            arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout incase we send bad data
+            arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
             while arduino.is_open==False:
                     pygame.time.wait(1)# wait for arduino to initialize
 
@@ -438,7 +447,7 @@ def serialstart(COMstring, baud):
             pass
 
         try:
-            arduino = serial.Serial(('COM' + str(COMstring)), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout incase we send bad data
+            arduino = serial.Serial(('COM' + str(COMstring)), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
             while arduino.is_open==False:
                 pygame.time.wait(1)# wait for arduino to initialize
             print ('COM' + COMstring + ' - Initialization Complete.')
@@ -819,9 +828,16 @@ def patternmenu(value):
 
 root= Tk()
 root.withdraw()
-root.resizable(0, 0)
 root.wm_attributes("-topmost", 1)
-root.geometry("540x650")
+
+if GetSystemMetrics(0) < 3840 and GetSystemMetrics(1) < 2160: 
+    root.resizable(0, 0)
+    root.geometry("540x650")
+
+else:# 4k and higher resolutions
+    root.resizable(1, 1)
+    root.geometry("1024x1080")
+
 root.iconbitmap('favicon.ico')
 
 
@@ -948,3 +964,12 @@ hm.HookKeyboard()
 pygame.event.pump()
 root.deiconify()
 root.mainloop()
+
+
+
+
+
+    
+
+    
+
