@@ -1,0 +1,27 @@
+Part	    Name		Value            Package              	Description
+
+C1          CAPACITOR    	22uf            CPOL-RADIAL	 	THROUGH-HOLE RADIAL CAPACITOR
+C2          CAPACITOR		20pf            C0805                	SMD CAPACITOR                                  
+C3          CAPACITOR		20pf            C0805                	SMD CAPACITOR
+C4          CAPACITOR		100nf           C0805                	SMD CAPACITOR
+C5          CAPACITOR		100nf           C0805                	SMD CAPACITOR
+C6          CAPACITOR		22uf            CPOL-RADIAL	 	THROUGH-HOLE RADIAL CAPACITOR
+C7          CAPACITOR		100nf           C0805                	SMD CAPACITOR
+C8          CAPACITOR		100nf           C0805                	SMD CAPACITOR
+C9          CAPACITOR		100nf           C0805                	SMD CAPACITOR
+C11         CAPACITOR		100nf           C0805                	SMD CAPACITOR
+D1          1N5819          			DO41-10              	THROUGH-HOLE DIODE
+IC1         LM1117MP-3.3    	3.3V		SOT-223               	SMD LINEAR REGULATOR 
+Q1          XTAL		8Mhz            HC49S                	THROUGH-HOLE CRYSTAL OSCILLATOR
+Q3          STN3NF06L 		    		SOT-223              	SMD N-CHANNEL MOSFET
+Q5          STN3NF06L    			SOT-223 		SMD N-CHANNEL MOSFET
+R1          RESISTOR		10k             R0805                	SMD RESISTOR
+R2          RESISTOR		100             R0805                	SMD RESISTOR
+R4          RESISTOR		10k             R0805                	SMD RESISTOR
+R5          RESISTOR		10k             R0805                	SMD RESISTOR
+R6          RESISTOR		100             R0805                	SMD RESISTOR
+R9          RESISTOR		10k             R0805                	SMD RESISTOR
+R10         RESISTOR		10k             R0805                	SMD RESISTOR
+R11         RESISTOR		100             R0805                	SMD RESISTOR
+U1          HC_05		          	BLUETOOTH_SMD        	SMD BLUETOOTH MODULE
+U2          ATTINY85				SOIC8_EIAJ_208MIL    	SMD ATMEL ATtiny85 Microcontroller                                                                                                                            
