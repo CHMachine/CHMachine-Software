@@ -1,4 +1,4 @@
-﻿import cv2
+import cv2
 import numpy as np
 from PIL import ImageGrab
 from tkinter import *
@@ -11,21 +11,241 @@ import serial.tools.list_ports
 import pygame
 from win32api import GetSystemMetrics
 import ctypes
+import glob
 
-try:
+version = '0.9.4'
+print('CHMACHINE Ver. %s \n' %version)
 
-    ctypes.windll.user32.SetProcessDPIAware()# Make the application DPI aware to accommodate 4K resolution
 
-except:
-    pass
+class motorclass():
+    
+    def __init__(self):
+        self.state=2
+        self.tempo=0
+        self.savestate=2
+        self.result=0 
+        self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create an array of zeros for the black background
+        self.index=0
+        self.listindex=0
+        self.timetic=0
+        self.patternspeed=0
+        self.speed='0'
+        self.targetspeed='0'
+        self.pinresttime=0
+        self.serialfloodlimit=5 #time(ms) between commands to limit serial flooding
 
-version = '0.9.3'
+                    
 
-serialbaud=9600
-streamwindowssizex=220
-streamwindowssizey=220
-Clock = pygame.time.Clock()
-Clock.tick()
+
+    def detect(self):
+
+        while 1:  
+            
+            if arduino_connected==False:  
+                 
+                pygame.time.wait(1)                                                        
+           
+            while ((self.state==5) or (self.state==1)): #################### DETECT/DETECT SETUP   state 5=detect setup, state 1=detect
+
+                if self.state==5 and self.getspeed()!=0 and arduino_connected==True:
+
+                    self.PWMpin('0')
+                   
+                arr = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
+                arr = cv2.cvtColor(arr,cv2.COLOR_RGB2BGR)
+                self.result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED) #check if images match
+
+                try: #take care of sliding too fast which result in a shape out of boundaries
+
+                    if self.state==5:
+
+                        if self.result>0:
+                            print ('%.0f %% Match' %(self.result*100))
+                        else:
+                            print ('0 % Match')
+
+                    
+                    if checkinv==False: #invert flag False
+
+
+                        if (self.result>=threshold): # if match value is over the threshold
+
+                            if self.state==1 and arduino_connected==True: 
+                                self.PWMpin(speed)
+                            
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            cv2.circle(self.colorshow,(0,0), 70, (0,255,0), -1) #draw a green circle 
+                            self.tempo=pygame.time.get_ticks()
+                    
+                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):  #turn the pin to floor speed some time after the last match is occurred 
+
+                            if self.state==1 and arduino_connected==True: 
+                                self.PWMpin(floorspeed)
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            
+
+                    else: #invert flag True
+                    
+                        if (self.result<=threshold):#match if value is under the threshold
+
+                            if self.state==1 and arduino_connected==True:
+                                self.PWMpin(speed)
+
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            cv2.circle(self.colorshow,(0,0), 70, (0,255,0), -1) #draw a green circle 
+                            self.tempo=pygame.time.get_ticks()
+                    
+                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):  #turn the pin to floor speed some time after the last match is occurred 
+                            
+                            if self.state==1 and arduino_connected==True:
+                                self.PWMpin(floorspeed)
+
+                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
+                            
+
+                    #centering and overlapping images over background:
+  
+                    x_offset=int(streamwindowssizex/2 - xsize)
+                    y_offset=int(streamwindowssizey/2 - ysize) 
+                    self.colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr   
+                
+                except:
+                    pass
+                   
+                        
+                cv2.imshow('Stream', self.colorshow)  #show image
+                cv2.waitKey(1)
+
+                if self.state==1 and arduino_connected==True:
+                    self.PWMpin(str(self.getspeed())) #Keeps the PWM pin alive(see Arduino code)
+                   
+
+
+            
+            while self.state==2 and arduino_connected==True:#################### STOP/PAUSE
+                
+                self.PWMpin('0')
+                pygame.time.wait(1)
+
+
+            while self.state==3 and arduino_connected==True: ##################### ALWAYSON/PATTERN
+
+                if patternvar=='none':
+
+                    self.PWMpin(speed)
+                    pygame.time.wait(1)
+                
+                else:
+                    self.listindex=namelist.index(patternvar)
+
+                    if pygame.time.get_ticks()-self.timetic>=timeonvar/100:
+                        if self.index < len(patternlist[self.listindex])-1:
+                            self.index+=1
+                        else:
+                            self.index=0
+                    
+                        self.patternspeed=int(round(patternlist[self.listindex][self.index]/100*int(speed)))
+                    
+
+                        if self.patternspeed>=int(floorspeed):
+                            self.PWMpin(str(self.patternspeed))
+
+                        if self.patternspeed<int(floorspeed) and self.listindex>1:
+                            self.PWMpin(floorspeed)
+
+
+                        self.timetic=pygame.time.get_ticks()
+
+
+
+            while self.state==4 and arduino_connected==True:######################### PULSE
+                
+                self.tempo=pygame.time.get_ticks()
+                
+
+                while (pygame.time.get_ticks()-self.tempo) <= (timeonvar):
+                    if self.state!=4:
+                        break
+                    self.PWMpin(speed)
+                    pygame.time.wait(1)
+                    
+
+                self.tempo=pygame.time.get_ticks()
+                
+
+                while (pygame.time.get_ticks()-self.tempo) <= (timeoffvar):
+                    if self.state!=4:
+                        break
+                    self.PWMpin(floorspeed)
+                    pygame.time.wait(1)
+                    
+
+                
+
+                     
+    def getspeed(self):
+        return int(self.speed)
+
+
+
+    def PWMpin(self, PWM_speed): #set the Arduino pin PWM
+        global arduino_connected
+
+        try:
+
+            if (pygame.time.get_ticks()-self.pinresttime) > self.serialfloodlimit: #limit serial flooding
+
+                self.speed=PWM_speed
+                arduino.write(('V' + self.speed + 'S').encode('utf-8'))
+                self.pinresttime=pygame.time.get_ticks()
+
+        except serial.SerialTimeoutException: 
+            print('WRITE TIMEOUT ERROR.')
+            arduino.close()
+            self.stop()
+            arduino_connected=False
+           
+        except:
+            print('SERIAL CONNECTION ERROR')
+            arduino.close()
+            self.stop()
+            arduino_connected=False
+
+
+
+    def stop(self):
+        self.state=2
+        self.savestate=2
+
+
+    def pause(self):
+       
+        if self.state!=2:
+            self.savestate=self.state
+            self.state=2
+            
+
+        elif self.state==2:
+            self.state=self.savestate
+        
+
+    def startdetect(self):
+        self.state=1
+        self.savestate=self.state
+
+    def alwayson_pattern(self):
+        
+        self.state=3
+        self.savestate=self.state
+
+    def pulse(self):
+        self.state=4
+        self.savestate=self.state
+
+    def setup(self):
+        self.state=5
+        self.savestate=self.state
+
 
 def keysetup(file):
     global pausebutton
@@ -33,24 +253,31 @@ def keysetup(file):
     global speedupbutton
     global screenshotbutton
     global refreshbutton
+    global savebutton
+    global loadbutton
+
     linelist=[]
 
-    #default keys:
+    ###default keys:
     pausebutton='Numpad0'
     slowdownbutton='Numpad1'
     speedupbutton='Numpad2'
     screenshotbutton='F9'
     refreshbutton='F10'
+    savebutton='F11'
+    loadbutton='F12'
+    ###
 
     try:
         setup  = open(file, 'r')
 
         for x in range(100):
             linelist=setup.readline().replace(' ', '').strip().split('=') #read line, remove spaces and split the string a the "=" sign
-            #print (linelist)
 
-            if linelist[0]== '***':     
+            if linelist[0]== '***':
+
                 break
+
             if linelist[0] == 'Pause':
                 pausebutton=linelist[1]
 
@@ -65,11 +292,28 @@ def keysetup(file):
         
             if linelist[0] == 'Refresh':
                 refreshbutton=linelist[1]
+             
+            if linelist[0] == 'Loadstate':
+                loadbutton=linelist[1]
+
+            if linelist[0] == 'Savestate':
+                savebutton=linelist[1]
 
 
         setup.close() 
     except:
         print('Cannot open', file, ', loading default keys...\n')
+
+    print('- HOTKEYS:\n')
+    print('Pause -------------- ',pausebutton)
+    print('Slow down ---------- ',slowdownbutton)
+    print('Speed up ----------- ',speedupbutton)
+    print('Screenshot --------- ',screenshotbutton)
+    print('Screenshot update -- ',refreshbutton)
+    print('Save state --------- ',savebutton)
+    print('Load state --------- ',loadbutton)
+    print('')
+    print('') 
 
         
 def patternsetup(file):
@@ -81,16 +325,16 @@ def patternsetup(file):
     namelist=[]
     patternlist=[]
     namelist.append('PATTERN')
-    namelist.append('None')
+    namelist.append('none')
     patternlist.append([0])
     patternlist.append([0])
     try:
         patterntxt = open(file, 'r')    
 
-        for x in range(100):
+        for x in range(1000):
             linelist=patterntxt.readline()        
 
-            if linelist.strip()== '***':#strip() removes white spaces and end of line characters
+            if linelist.strip()== '***':  #strip() removes white spaces and end of line characters
                 break
 
             try:
@@ -118,251 +362,23 @@ def patternsetup(file):
 def comportsetup():
     global ports
     ports = list(serial.tools.list_ports.comports()) # detects available ports
-    #prints available ports
     print ('- AVAILABLE PORTS:\n') 
     for p in ports:
         print (p) 
     print('')
 
-   
-class motorclass():
-    
-    def __init__(self):
-        self.state=2
-        self.tempo=0
-        self.savestate=2
-        self.tempokeepalive=0
-        self.keepalivems=100
-        self.result=0 
-        self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create an array of zeros for the black background
-        self.index=0
-        self.listindex=0
-        self.timetic=0
-        self.patternspeed=0
-        self.speed='0'
-        self.pinresttime=0
-
-    def detect(self):
-        
-
-        while 1:
-           
-            while (self.state==5) or (self.state==1): #################### DETECT
-
-                if self.state==5 and self.getspeed()!='0':
-
-                    self.PWMpin('0')
-                   
-                arr = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize))))
-                arr = cv2.cvtColor(arr,cv2.COLOR_RGB2BGR)
-                self.result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED)
-
-                try:#take care of sliding too fast which result in a shape out of boundaries
-
-                    if self.state==5:
-
-                        if self.result>0:
-                            print ('%.0f %% Match' %(self.result*100))
-                        else:
-                            print ('0 % Match')
-
-                    
-                    if checkinv==False: #invert flag False
-                       
-                        if (self.result>=treshold):#turn on the pin if the match value is over the threshold
-
-                            if self.state==1:
-                                self.PWMpin(speed)
-                            
-                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-                            cv2.circle(self.colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
-                            self.tempo=pygame.time.get_ticks()
-                    
-                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):  #turn the pin to floor speed some time after the last match is occurred 
-
-                            if self.state==1:
-                                self.PWMpin(floorspeed)
-
-                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-
-                         
-
-                    else: #invert flag True
-                    
-                        if (self.result<=treshold):#turn on the pin if the match value is under the threshold
-
-                            if self.state==1:
-                                self.PWMpin(speed)
-
-                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-                            cv2.circle(self.colorshow,(0,0), 63, (0,255,0), -1) #draw a green circle
-                            self.tempo=pygame.time.get_ticks()
-                    
-                        elif (pygame.time.get_ticks()-self.tempo) >= (timeonvar):  #turn off the pin to floor speed some time after the last match is occurred 
-                            
-                            if self.state==1:
-                                self.PWMpin(floorspeed)
-
-                            self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create a black background
-
-                    #centering and overlapping images over background:
-                    x_offset=int(streamwindowssizex/2 - xsize) 
-                    y_offset=int(streamwindowssizey/2 - ysize) 
-                    self.colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr   
-                
-                except:
-                    pass
-                   
-                        
-                cv2.imshow('Stream', self.colorshow)  #showing image
-                cv2.waitKey(1)
-
-                if  pygame.time.get_ticks()-self.tempokeepalive>=self.keepalivems: #keeps the pin alive(see arduino code)
-
-                    self.PWMpin(self.getspeed()) 
-                    self.tempokeepalive=pygame.time.get_ticks()
-
-
-            
-            while self.state==2:#################### STOP/PAUSE
-
-                if motor.getspeed()!='0': 
-                    self.pinresttime=0
-                    self.PWMpin('0')
-
-                pygame.time.wait(1)
-
-
-            while self.state==3: ##################### ALWAYS ON
-                
-                self.PWMpin(speed)
-                pygame.time.wait(1)
-
-
-            while self.state==4:######################### PULSE
-                
-                self.tempo=pygame.time.get_ticks()
-                
-
-                while (pygame.time.get_ticks()-self.tempo) <= (timeonvar):
-                    if self.state!=4:
-                        break
-                    self.PWMpin(speed)
-                    pygame.time.wait(1)
-                    
-
-                self.tempo=pygame.time.get_ticks()
-                
-
-                while (pygame.time.get_ticks()-self.tempo) <= (timeoffvar):
-                    if self.state!=4:
-                        break
-                    self.PWMpin(floorspeed)
-                    pygame.time.wait(1)
-                    
-                    
-                
-
-            while self.state==6: ##################### PATTERN
-                
-                self.listindex=namelist.index(patternvar)
-
-                if pygame.time.get_ticks()-self.timetic>=timeonvar/100:
-                    if self.index < len(patternlist[self.listindex])-1:
-                        self.index+=1
-                    else:
-                        self.index=0
-                    
-                    self.patternspeed=int(round(patternlist[self.listindex][self.index]/100*int(speed)))
-                    
-
-                    if self.patternspeed>=int(floorspeed):
-                        self.PWMpin(str(self.patternspeed))
-                        #print(self.patternspeed)
-
-                    if self.patternspeed<int(floorspeed) and self.listindex>1:
-                        self.PWMpin(floorspeed)
-                        #print(self.patternspeed,floorspeed )
-
-
-                    self.timetic=pygame.time.get_ticks()
-                    
-                
-
-                     
-    def getspeed(self):
-        return self.speed
-
-
-                              
-    def PWMpin(self, PWM_speed): #set the PWM of the microcontroller pin
-        self.speed=PWM_speed
-
-        try:
-
-            if (pygame.time.get_ticks()-self.pinresttime) > 5: #limit serial flooding
-                arduino.write(('V' + self.speed + 'S').encode('utf-8'))
-                self.pinresttime=pygame.time.get_ticks()
-
-        except serial.SerialTimeoutException: 
-            print('WRITE TIMEOUT ERROR.')
-            arduino.close()
-            self.stop()
-
-        except:
-            pass
-       
-
-
-    def stop(self):
-        self.state=2
-        self.savestate=2
-
-
-    def pause(self):
-       
-        if self.state!=2:
-            self.savestate=self.state
-            self.state=2
-            
-
-        elif self.state==2:
-            self.state=self.savestate
-        
-
-    def startdetect(self):
-        self.state=1
-        self.savestate=self.state
-
-    def alwayson(self):
-        
-        self.state=3
-        self.savestate=self.state
-
-    def pulse(self):
-        self.state=4
-        self.savestate=self.state
-
-    def setup(self):
-        self.state=5
-        self.savestate=self.state
-
-    def pattern(self):
-        self.state=6
-        self.savestate=self.state
-
  
-def serialstartauto(baud): 
+def autoserialstart(baud): 
     checkAO.configure(state=DISABLED)
     checkPUL.configure(state=DISABLED)
     checkDET.configure(state=DISABLED)
     checkSET.configure(state=DISABLED)
-    checkpatterntick.configure(state=DISABLED)
     buttonserial.configure(state=DISABLED)
     comentry.insert(END, "PLEASE WAIT...") # insert text into the widget
     comentry.configure(state=DISABLED)
 
     global arduino
+    global arduino_connected
     line=('')
     portnumber=('')
     comentry.delete(0, END)  # delete text from the widget from position 0 to the END 
@@ -371,11 +387,10 @@ def serialstartauto(baud):
     
     resetGUI()
     motor.stop() 
-         
-
+        
     print("Looking for the CH Machine, PLEASE WAIT...\n")
     for p in ports: 
-        
+        arduino_connected=False
         try:
             try:#close already existing serial connection
                 arduino.close()
@@ -387,7 +402,7 @@ def serialstartauto(baud):
             print (p[0] + '...')
             arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
             while arduino.is_open==False:
-                    pygame.time.wait(1)# wait for arduino to initialize
+                pygame.time.wait(1)# wait for arduino to initialize
 
             arduino.write(('T').encode('utf-8'))#
             pygame.time.wait(150)
@@ -395,6 +410,7 @@ def serialstartauto(baud):
             if line.find('connOK')!=-1:#
                 print("CHM CONNECTED!")
                 print (p[0] + ' - Initialization Complete.')
+                arduino_connected=True
                 break
             else:
                 print ('Wrong serial connection.')
@@ -409,7 +425,6 @@ def serialstartauto(baud):
     checkPUL.configure(state=NORMAL)
     checkDET.configure(state=NORMAL)
     checkSET.configure(state=NORMAL)
-    checkpatterntick.configure(state=NORMAL)
     buttonserial.configure(state=NORMAL)
     comentry.configure(state=NORMAL)
     comentry.delete(0, END) 
@@ -419,14 +434,15 @@ def serialstartauto(baud):
 
 
 def serialstart(COMstring, baud):
+    global arduino_connected
     global arduino
     line=('')
     comentry.delete(0, 'end')  # delete text from the widget  
     root.focus() #remove focus from the entry widget
+     
     
-    
-    if COMstring ==(''): #start serialstartauto() to find correct COM port
-        tserial=threading.Thread(target=serialstartauto, args={serialbaud})
+    if COMstring == ('') or COMstring == ('COM Port'): #start autoserialstart() to find correct COM port
+        tserial=threading.Thread(target=autoserialstart, args={serialbaud})
         tserial.setDaemon(True)
         tserial.start()
 
@@ -437,24 +453,37 @@ def serialstart(COMstring, baud):
 
         print ('COM' + COMstring + ' - Initializing...')
         resetGUI()
+        arduino_connected=False   
         motor.stop()   
-         
+                 
         try:
-            arduino.close()
-            while arduino.is_open:
-                    pygame.time.wait(1)
+            if arduino.is_open:
+                arduino.close()
+                pygame.time.wait(500)            
         except:
             pass
 
         try:
             arduino = serial.Serial(('COM' + str(COMstring)), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
             while arduino.is_open==False:
-                pygame.time.wait(1)# wait for arduino to initialize
-            print ('COM' + COMstring + ' - Initialization Complete.')
+                pygame.time.wait(1)# wait for the Arduino to initialize
+            #test the connection(see Arduino code):
+            arduino.write(('T').encode('utf-8'))
+            pygame.time.wait(150)
+            line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
+            if line.find('connOK')!=-1:
+                print("CHM CONNECTED!")
+                print ('COM' + str(COMstring) + ' - Initialization Complete.')
+                arduino_connected=True
+             
+            else:
+                print ('Wrong serial connection.')
+                arduino.close()
 
         except serial.SerialTimeoutException:
             print ('COM' + COMstring + ' TIMEOUT EXCEPTION. Try another port.')
             arduino.close()
+            arduino_connected=False
                 
         except:
             if COMstring.isdigit()==True:
@@ -465,26 +494,17 @@ def serialstart(COMstring, baud):
     elif (COMstring !=('') and COMstring.isdigit()==False):
         print('Digits only')
 
-        
+     
 def onKeyDown(event):
     
     global speed
-    #print ('MessageName:',event.MessageName)
-    #print ('Message:',event.Message)
-    #print ('Time:',event.Time)
-    #print ('Window:',event.Window)
-    #print ('WindowName:',event.WindowName)
-    #print ('Ascii:', event.Ascii, chr(event.Ascii))
-    #print ('Key:', event.Key)
-    #print ('KeyID:', event.KeyID)
-    #print ('ScanCode:', event.ScanCode)
-    #print ('Extended:', event.Extended)
-    #print ('Injected:', event.Injected)
-    #print ('Alt', event.Alt)
-    #print ('Transition', event.Transition)
-    #print ('---')
+    global pos
+    global arrbase
+    global savelist
+    global loadlist
 
-        # never put any condition first other than event.key 
+
+# never put any condition before event.key 
     if event.Key == ('Return'):
         
         if comentry==root.focus_get() and comentry.get()!=(''):
@@ -494,7 +514,7 @@ def onKeyDown(event):
     if event.Key == (slowdownbutton):
         
         speedint=int(speed)
-        if (checkAOVar.get()==True or checkPULVar.get()==True or checkDETVar.get()==True or checkpatternVar.get()==True):
+        if (checkAOVar.get()==True or checkPULVar.get()==True or checkDETVar.get()==True):
             if speedint>10:
                 speedint -= 10
                 motorspeed.set(speedint)
@@ -508,7 +528,7 @@ def onKeyDown(event):
 
     if event.Key == (speedupbutton): 
         speedint=int(speed)
-        if (checkAOVar.get()==True or checkPULVar.get()==True or checkDETVar.get()==True or checkpatternVar.get()==True):
+        if (checkAOVar.get()==True or checkPULVar.get()==True or checkDETVar.get()==True):
             if speedint <= 245:
                 speedint += 10
                 motorspeed.set(speedint)
@@ -519,109 +539,191 @@ def onKeyDown(event):
                 speed=('255')
         
 
-    if event.Key == (pausebutton): 
+    if event.Key == (pausebutton):
+         
         motor.pause()
 
     if (event.Key == screenshotbutton or event.Key == refreshbutton):
         
-        global pos
-        global arrbase
         if (event.Key == screenshotbutton):
+
             pos=win32gui.GetCursorPos() 
         
-        if (pos!=None):
-            print(pos)  
-        
-            arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize))))
-            arrbase=cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR)
+        if (pos!=[-1,-1]):
 
+            print(pos)  
+            arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
+            arrbase = cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR)
+             
+            base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
+            cv2.imshow('Stream',base)
 
             x_offset=int(streamwindowssizex/2 - xsize)
-            y_offset=int(streamwindowssizey/2 - ysize)  
-            base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create black background
-            cv2.imshow('Stream',base)
-        
-            base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase
-            cv2.imshow('Match_1',base)
+            y_offset=int(streamwindowssizey/2 - ysize) 
+            base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
+            cv2.imshow('Match',base)
             cv2.waitKey(1)
 
-            hwndstream = win32gui.FindWindow(None,'Stream')
-            rectstream = win32gui.GetWindowRect(hwndstream)
-            win32gui.SetWindowPos(hwndstream, win32con.HWND_TOPMOST, rectstream[0], rectstream[1], rectstream[2]-rectstream[0], rectstream[3]-rectstream[1], 0) 
+   
+    if event.Key == (savebutton):
 
-            hwndmatch = win32gui.FindWindow(None,'Match_1')
-            rectmatch = win32gui.GetWindowRect(hwndmatch)
-            win32gui.SetWindowPos(hwndmatch, win32con.HWND_TOPMOST, rectmatch[0], rectmatch[1], rectmatch[2]-rectmatch[0], rectmatch[3]-rectmatch[1], 0) 
+        filesname=glob.glob("*.npz") #find name of all .npz files in the main folder
+        savelist=[]
 
-                  
+        
+        for x in filesname:
+            try: #in case of a miswritten file name
+                num=int(x.replace('save', '').replace('.npz', '')) #removes letters from string and converts number to int
+                savelist.append(num)
+            except:
+                pass
+
+        if savelist!=[]:
+            savename=('save' + str(max(savelist) + 1) + '.npz') #find the max value to add to the string
+            
+        else:
+            savename=('save0.npz')
+
+        np.savez(savename, arrbase, pos, int(xsize), int(ysize), speed, floorspeed, timeonvar, timeoffvar, threshold, checkinv)
+        print(savename, 'SAVED')
+        loadlist=[]
+
+ 
+
+    if event.Key == (loadbutton):
+
+        filesname=glob.glob("*.npz") #find name of all npz files in the main folder
+        if loadlist==[]: 
+
+            for x in filesname:
+                try: #in case of a miswritten file name
+                    num=int(x.replace('save', '').replace('.npz', '')) #removes letters from string and converts number to int
+                    loadlist.append(num)
+                except:
+                    pass
+                
+        loadlist.sort() #sort numbers in the list
+
+        if loadlist!=[]: 
+
+            loadname=('save' + str(loadlist.pop()) + '.npz') # pop() removes last element and return it
+            loaded_arrays = np.load(loadname)
+
+            load_state(loaded_arrays['arr_0'], loaded_arrays['arr_1'], loaded_arrays['arr_2'], loaded_arrays['arr_3'], loaded_arrays['arr_4'],
+                       loaded_arrays['arr_5'], loaded_arrays['arr_6'], loaded_arrays['arr_7'], loaded_arrays['arr_8'], loaded_arrays['arr_9'])
+            print(loadname, 'LOADED')
+        else:
+            print('nothing to load')
+              
+        
     return True
 
-    
-    
-# TKINTER FUNCTIONS: 
 
+def load_state(image_arrayl, posl, xsizel, ysizel, speedl, floorspeedl, timeonvarl, timeoffvarl, thresholdl, checkinvl):
+    
+    global xsize
+    global ysize
+    global speed
+    global timeonvar
+    global timeoffvar
+    global floorspeed
+    global threshold
+    global arrbase
+    global pos
+    global checkinv
+
+    ###load variables and update interface:
+
+    motorspeed.set(speedl) 
+    speed=str(speedl)
+
+    timeON.set(timeonvarl)
+    timeonvar=timeON.get()
+
+    timeOFF.set(timeoffvarl)
+    timeoffvar=timeOFF.get()
+
+    floorspeedVAR.set(floorspeedl)
+    floorspeed=str(floorspeedVAR.get())
+
+    thresh.set(thresholdl * 100)
+    threshold=thresholdl
+
+    if checkinvl == True:
+        checkinvert.select()
+        checkinv=True
+    else:
+        checkinvert.deselect()
+        checkinv=False
+    
+
+    ###load image:
+
+    if posl[0] != -1:
+
+        pos = [posl[0], posl[1]]
+        arrbase=image_arrayl
+        sizex.set(xsizel)
+        sizey.set(ysizel)
+        xsize=xsizel*(streamwindowssizex - 20)/200
+        ysize=ysizel*(streamwindowssizey - 20)/200
+        x_offset=int(streamwindowssizex/2 - xsize)
+        y_offset=int(streamwindowssizey/2 - ysize) 
+
+        base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
+        cv2.imshow('Stream',base)
+        base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
+        cv2.imshow('Match', base)
+        cv2.waitKey(1)
+   
+
+
+# TKINTER FUNCTIONS:
 
 
 def alwaysONtick():
     
-    
-    try:
-        arduino.name
-        if (arduino.is_open):
+        try:
+            arduino.name
+            if (arduino.is_open):
             
 
 
-            if checkAOVar.get()==False:
-                resetGUI()
-                motor.stop()
+                if checkAOVar.get()==False:
+                    resetGUI()
+                    motor.stop()
 
        
-            if checkAOVar.get()==True:
-                resetGUI()
-                slidera.config(foreground='black')
-                checkAO.select()
-                motor.alwayson()
-        else:
+                if checkAOVar.get()==True:
+
+                    if patternvar=='none':
+
+                        resetGUI()
+                        slidera.config(foreground='black')
+                        checkAO.select()
+                        motor.alwayson_pattern()
+
+                    else:
+                        
+                        resetGUI()
+                        slidera.config(foreground='black')
+                        sliderb.config(foreground='black', label='PATTERN FREQ:')
+                        sliderd.config(foreground='black')
+                        checkAO.select()
+                        motor.alwayson_pattern()
+
+            else:
+                print('No serial connection')
+                checkAO.deselect()
+        except:
             print('No serial connection')
             checkAO.deselect()
-    except:
-        print('No serial connection')
-        checkAO.deselect()
-
-
-def patterntick():
-     
-     try:
-        arduino.name
-        if (arduino.is_open):
-     
-            if checkpatternVar.get()==False:
-                resetGUI()
-                motor.stop()
-        
-           
-         
-            if checkpatternVar.get()==True:
-                resetGUI()
-                slidera.config(foreground='black')
-                sliderb.config(foreground='black', label='PATTERN FREQ:')
-                sliderd.config(foreground='black')
-                checkpatterntick.select()
-                motor.pattern()
-
-        else:
-            print('No serial connection')
-            checkpatterntick.deselect()
-
-     except:
-        print('No serial connection')
-        checkpatterntick.deselect()
 
 
 def detecttick():
      
  
-     if (pos==None):
+     if (pos==[-1,-1]):
             print('Position? (Press', screenshotbutton, 'to take a screenshot)')
             checkDET.deselect()
             
@@ -642,7 +744,7 @@ def detecttick():
                     sliderd.config(foreground='black')
                     slidersizex.config(foreground='black')
                     slidersizey.config(foreground='black')
-                    slidertresh.config(foreground='black')
+                    sliderthresh.config(foreground='black')
                     checkinvert.config(foreground='black')
                     checkDET.select()
                     motor.startdetect()
@@ -657,7 +759,7 @@ def detecttick():
 def detectsetup():
      
 
-     if (pos==None):
+     if (pos==[-1,-1]):
             print('Position? (Press', screenshotbutton, 'to take a screenshot)')
             checkSET.deselect()
 
@@ -673,7 +775,7 @@ def detectsetup():
             sliderb.config(foreground='black')
             slidersizex.config(foreground='black')
             slidersizey.config(foreground='black')
-            slidertresh.config(foreground='black')
+            sliderthresh.config(foreground='black')
             checkinvert.config(foreground='black')
             checkSET.select()
             motor.setup()
@@ -709,12 +811,7 @@ def on_closing():
 
     print ('Bye Bye')
     motor.stop()
-
-    try:
-        arduino.close()
-    except:
-        pass
-
+    root.quit()
     root.destroy()
     print ('Be vigilant')
     sys.exit()
@@ -724,19 +821,20 @@ def slidersize(value):
     global arrbase
     global xsize
     global ysize
+
     xsize=sizex.get()*(streamwindowssizex - 20)/200
     ysize=sizey.get()*(streamwindowssizey - 20)/200
-    try:#at startup an exception occur (pos=none)
-        arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize))))
-        arrbase=cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR)
-        x_offset=int( streamwindowssizex/2 - xsize)
-        y_offset=int( streamwindowssizey/2 - ysize)  
-        baseshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create black background
-        baseshow[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase
-        cv2.imshow('Match_1', baseshow)
+
+    if pos != [-1,-1]:
+
+        arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
+        arrbase=cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR) 
+        base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
+        x_offset=int(streamwindowssizex/2 - xsize)
+        y_offset=int(streamwindowssizey/2 - ysize) 
+        base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
+        cv2.imshow('Match', base)
         cv2.waitKey(1)  
-    except:
-        pass 
 
 
 def speedslider(value):
@@ -759,13 +857,14 @@ def timeOFFslider(value):
     timeoffvar=int(value)
 
    
-def tresholdslider(value):
-    global treshold
-    treshold=int(value)/100
+def thresholdslider(value):
+
+    global threshold
+    threshold=int(value)/100
 
   
 def about():
-   
+    
     top = Toplevel()
     top.wm_attributes("-topmost", 1)
     top.resizable(0, 0)
@@ -787,18 +886,23 @@ def about():
     button.pack()
 
 
-def alwaysONtop():
+def ontop():
 
     root.wm_attributes("-topmost", not root.wm_attributes("-topmost"))
 
 
-def resetGUI():
+def on_entry_click(event):
+    if comentry.get() == 'COM Port':
+       comentry.delete(0, "end") # delete all the text in the entry
+       comentry.insert(0, '') #Insert blank for user input
+       comentry.config(fg = 'black')
 
+
+def resetGUI():
     checkAO.deselect()
     checkPUL.deselect()
     checkDET.deselect()
     checkSET.deselect()
-    checkpatterntick.deselect()
 
     slidera.config(foreground='gray')
     sliderb.config(foreground='gray', label='TIME ON(ms):')
@@ -806,10 +910,10 @@ def resetGUI():
     sliderd.config(foreground='gray')
     slidersizex.config(foreground='gray')
     slidersizey.config(foreground='gray')
-    slidertresh.config(foreground='gray')
+    sliderthresh.config(foreground='gray')
     checkinvert.config(foreground='gray')
-
-  
+      
+      
 def inverttick():
     
     global checkinv
@@ -820,80 +924,66 @@ def patternmenu(value):
     
     global patternvar
     patternvar=value
-    
+    alwaysONtick()
+  
 
 
-
-# TKINTER INTERFACE:    
-
+# TKINTER INTERFACE:  
+  
 root= Tk()
-root.withdraw()
-root.wm_attributes("-topmost", 1)
-
-if GetSystemMetrics(0) < 3840 and GetSystemMetrics(1) < 2160: 
-    root.resizable(0, 0)
-    root.geometry("540x650")
-
-else:# 4k and higher resolutions
-    root.resizable(1, 1)
-    root.geometry("1024x1080")
-
-root.iconbitmap('favicon.ico')
-
-
-buttonb=Button(root, height=2, width=15, text='-PAUSE/START- \n(numpad 0)', command=lambda:motor.pause())
-buttonb.grid(row = 2, column = 1,pady=10)
-
-buttonserial=Button(root,height=1, width=8,text='CONNECT', command=lambda:serialstart(comtext.get(), serialbaud))
-buttonserial.grid(row = 0, column = 2)
-
-buttonabout=Button(root,height=1, width=8,text='About...', command=lambda:about())
-buttonabout.grid(row = 0, column = 5)
-
-checkontop=Checkbutton(root,text = 'On top', command=lambda:alwaysONtop())
-checkontop.grid(row = 0, column = 3, sticky=W)
-checkontop.select()
+streamwindowssizex=220
+streamwindowssizey=220
 
 comtext = StringVar()
 comentry=Entry(root, textvariable=comtext)
-comentry.grid(row = 0, column = 1)
+comentry.grid(row = 0, column = 0)
+comentry.insert(0, "COM Port")
+comentry.bind('<FocusIn>', on_entry_click)
+comentry.config(fg = 'gray', width=13)
 
-labe = Label(root, text="COM:")
-labe.grid(row = 0, column = 0)
+buttonserial=Button(root,height=1, width=8,text='CONNECT', command=lambda:serialstart(comtext.get(), serialbaud))
+buttonserial.grid(row = 0, column = 1, sticky=W)
+
+checkontop=Checkbutton(root,text = 'On top', command=lambda:ontop())
+checkontop.grid(row = 0, column = 3)
+checkontop.select()
+
+buttonabout=Button(root,height=1, width=8,text='About...', command=lambda:about())
+buttonabout.grid(row = 0, column = 4)
+
+patternsetup('pattern.txt')#load patterns
+patternvar='none'
+pattern_variable = StringVar()
+pattern_variable.set("PATTERNS")
+optionmenu_widget = OptionMenu(root, pattern_variable, *namelist[1:], command=patternmenu)
+optionmenu_widget.grid(row = 2, column=0)
+optionmenu_widget.config(width=7)
 
 checkAOVar = IntVar()
 checkAO=Checkbutton(root,text = 'ALWAYS ON', command=lambda:alwaysONtick(), variable = checkAOVar)
-checkAO.grid(row = 2, column = 2)
-
-checkpatternVar = IntVar()
-checkpatterntick=Checkbutton(root,text = '', command=lambda:patterntick(), variable = checkpatternVar)
-checkpatterntick.grid(row = 3, column = 1, sticky=E)
-
-patternsetup('pattern.txt')#load patterns
-patternvar='None'
-pattern_variable = StringVar()
-pattern_variable.set("PATTERN")
-optionmenu_widget = OptionMenu(root, pattern_variable, *namelist[1:], command=patternmenu)
-optionmenu_widget.grid(row = 3, column=2, columnspan=2, sticky=W+E)
-
-checkDETVar = IntVar()
-checkDET=Checkbutton(root,text = 'DETECT', command=lambda:detecttick(), variable = checkDETVar)
-checkDET.grid(row = 2, column = 4, sticky=W)
-
-checkSETVar = IntVar()
-checkSET=Checkbutton(root,text = 'DETECT SETUP', command=lambda:detectsetup(), variable = checkSETVar)
-checkSET.grid(row = 2, column = 5, sticky=W)
+checkAO.grid(row = 2, column = 1, pady=10)
 
 checkPULVar = IntVar()
 checkPUL=Checkbutton(root,text = 'PULSE', command=lambda:pulsetick(), variable = checkPULVar)
-checkPUL.grid(row = 2, column = 3, sticky=W)
+checkPUL.grid(row = 2, column = 2, pady=10)
+
+checkDETVar = IntVar()
+checkDET=Checkbutton(root,text = 'DETECT', command=lambda:detecttick(), variable = checkDETVar)
+checkDET.grid(row = 2, column = 3, pady=10)
+
+checkSETVar = IntVar()
+checkSET=Checkbutton(root,text = 'DETECT SETUP', command=lambda:detectsetup(), variable = checkSETVar)
+checkSET.grid(row = 2, column = 4, pady=10)
+
+buttonpause=Button(root, height=2, width=60, text='-PAUSE/START-', command=lambda:motor.pause())
+buttonpause.grid(row = 4, columnspan = 5, pady=10)
 
 motorspeed=IntVar(value=10)
 slidera = Scale(root, from_=0, to=255, orient=HORIZONTAL,length=400.00, variable=motorspeed, label='MOTOR SPEED:', command=speedslider)
 slidera.grid(columnspan = 6,pady=5)
 speed=(str(motorspeed.get()))
 
-timeON=IntVar(value=500)
+timeON=IntVar(value=200)
 sliderb = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=400.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
 sliderb.grid(columnspan = 7,pady=5)
 timeonvar=timeON.get()
@@ -918,58 +1008,64 @@ slidersizey = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, vari
 slidersizey.grid(columnspan = 11,pady=5)
 ysize=sizey.get()*(streamwindowssizey - 20)/200
 
-tresh=IntVar(value=70)
-slidertresh = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=tresh, label='TRESHOLD:', command=tresholdslider)
-slidertresh.grid(columnspan = 12,pady=5)
-treshold=int(tresh.get())/100
+thresh=IntVar(value=70)
+sliderthresh = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=thresh, label='THRESHOLD:', command=thresholdslider)
+sliderthresh.grid(columnspan = 12,pady=5)
+threshold=int(thresh.get())/100
 
 checkinv=False
-checkinvert=Checkbutton(root,text = 'Invert', command=inverttick)
+checkinvert=Checkbutton(root,text = 'Invert', command=inverttick, variable=checkinv)
 checkinvert.grid(columnspan = 13)
 
-root.protocol("WM_DELETE_WINDOW", on_closing)
-root.title('CHM ' + version)
-resetGUI()
 
 #THREADS:
 
+arduino_connected=False
 motor=motorclass()
 tmotordetect=threading.Thread(target=motor.detect, args=())
 tmotordetect.setDaemon(True)
 tmotordetect.start()
 
+
 #INITIALIZING:
+
+pos=[-1,-1]
+savelist=[] 
+loadlist=[] 
+xsize=sizex.get()*(streamwindowssizex - 20)/200
+ysize=sizey.get()*(streamwindowssizey - 20)/200
+arrbase=np.zeros((int(xsize), int(ysize), 3), np.uint8) #an array of zeros for a black image
+serialbaud=9600
 arduino=None
-print('CHMACHINE Ver. %s \n' %version)
 keysetup('setup.txt') #assign keys from setup.txt
-Clock.tick()
-
-
-print('- HOTKEYS:\n')
-print('Pause=',pausebutton)
-print('Slow down=',slowdownbutton)
-print('Speed up=',speedupbutton)
-print('Screenshot=',screenshotbutton)
-print('Screenshot update=',refreshbutton)
-print('')
-print('') 
-
-
 comportsetup() #list all available com ports
-pos=None
 pygame.init()
 hm = pyHook.HookManager() # hooking keyboard
 hm.KeyDown = onKeyDown
 hm.HookKeyboard() 
 pygame.event.pump()
+root.withdraw()
+root.wm_attributes("-topmost", 1)
+root.protocol("WM_DELETE_WINDOW", on_closing)
+root.title('CHM ' + version)
+root.iconbitmap('favicon.ico')
 root.deiconify()
+resetGUI()
+
+##### bodged fix for 4k resolution and higher:
+try:
+    ctypes.windll.user32.SetProcessDPIAware()# Make the application DPI aware to accommodate 4K resolution
+except:
+    pass
+
+if GetSystemMetrics(0) < 3840 and GetSystemMetrics(1) < 2160: 
+    root.resizable(0, 0)
+    root.geometry("456x670")
+
+else:
+    root.resizable(1, 1)
+    root.geometry("1024x1080")
+
+#####
+
 root.mainloop()
-
-
-
-
-
-    
-
-    
-

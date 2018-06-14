@@ -3,6 +3,8 @@ Slowdown =   Numpad1
 Speedup =    Numpad2
 Screenshot = F9
 Refresh =    F10
+Savestate =  F11
+Loadstate =  F12
 ***
 
 Key examples:
