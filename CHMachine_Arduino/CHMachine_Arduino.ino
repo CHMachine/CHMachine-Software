@@ -49,7 +49,7 @@ void loop() {
 
   }
 
-  if (millis() - timer >= timelimit) { //turn off the pin for after some time if no data is received (just a safety precaution)
+  if (millis() - timer >= timelimit) { //turn off the pin after some time if no data is received (just a safety precaution)
     analogWrite(pin, 0);
   }
 
