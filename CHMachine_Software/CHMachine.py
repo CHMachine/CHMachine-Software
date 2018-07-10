@@ -4,6 +4,7 @@ from PIL import ImageGrab
 from tkinter import *
 import win32gui
 import win32con
+import win32console
 import pyHook # pyhook_py3k is advised
 import serial
 import threading
@@ -45,7 +46,7 @@ class motorclass():
                  
                 pygame.time.wait(1)                                                        
            
-            while ((self.state==5) or (self.state==1)): #################### DETECT/DETECT SETUP   state 5=detect setup, state 1=detect
+            while ((self.state==5) or (self.state==1)): #################### DETECT/DETECT SETUP
 
                 if self.state==5 and self.getspeed()!=0 and arduino_connected==True:
 
@@ -112,10 +113,12 @@ class motorclass():
                 except:
                     pass
                    
-                        
-                cv2.imshow('Stream', self.colorshow)  #show image
-                cv2.waitKey(1)
-
+                hwndstream = win32gui.FindWindow(None,'Stream')
+                if hwndstream!=0: #if "Stream" window is open
+                    
+                    cv2.imshow('Stream', self.colorshow)  #show image
+                    cv2.waitKey(1)
+                
                 if self.state==1 and arduino_connected==True:
                     self.PWMpin(str(self.getspeed())) #Keeps the PWM pin alive(see Arduino code)
                    
@@ -392,7 +395,7 @@ def autoserialstart(baud):
     for p in ports: 
         arduino_connected=False
         try:
-            try:#close already existing serial connection
+            try:#try to close already existing serial connection
                 arduino.close()
                 while arduino.is_open:
                     pygame.time.wait(1)
@@ -404,10 +407,10 @@ def autoserialstart(baud):
             while arduino.is_open==False:
                 pygame.time.wait(1)# wait for arduino to initialize
 
-            arduino.write(('T').encode('utf-8'))#
+            arduino.write(('T').encode('utf-8'))
             pygame.time.wait(150)
             line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
-            if line.find('connOK')!=-1:#
+            if line.find('connOK')!=-1:
                 print("CHM CONNECTED!")
                 print (p[0] + ' - Initialization Complete.')
                 arduino_connected=True
@@ -419,7 +422,7 @@ def autoserialstart(baud):
             print ('Serial port exception')
 
     if line.find('connOK')==-1:
-        print ('\nCH Machine NOT found, check out the connection.\n')
+        print ('\nCHMachine not found, check out the connection.\n')
 
     checkAO.configure(state=NORMAL)
     checkPUL.configure(state=NORMAL)
@@ -503,7 +506,6 @@ def onKeyDown(event):
     global savelist
     global loadlist
 
-
 # never put any condition before event.key 
     if event.Key == ('Return'):
         
@@ -547,22 +549,22 @@ def onKeyDown(event):
         
         if (event.Key == screenshotbutton):
 
-            pos=win32gui.GetCursorPos() 
-        
-        if (pos!=[-1,-1]):
+            pos=win32gui.GetCursorPos()
+                    
+        if (pos != [-1,-1]):
 
             print(pos)  
             arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
-            arrbase = cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR)
-             
+            arrbase = cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR)           
             base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
-            cv2.imshow('Stream',base)
-
             x_offset=int(streamwindowssizex/2 - xsize)
             y_offset=int(streamwindowssizey/2 - ysize) 
             base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
             cv2.imshow('Match',base)
+            cv2.namedWindow('Stream', cv2.WINDOW_AUTOSIZE)
+            ontop()  
             cv2.waitKey(1)
+                     
 
    
     if event.Key == (savebutton):
@@ -669,11 +671,10 @@ def load_state(image_arrayl, posl, xsizel, ysizel, speedl, floorspeedl, timeonva
         ysize=ysizel*(streamwindowssizey - 20)/200
         x_offset=int(streamwindowssizex/2 - xsize)
         y_offset=int(streamwindowssizey/2 - ysize) 
-
         base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
-        cv2.imshow('Stream',base)
         base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
         cv2.imshow('Match', base)
+        cv2.namedWindow('Stream', cv2.WINDOW_AUTOSIZE)
         cv2.waitKey(1)
    
 
@@ -813,6 +814,7 @@ def on_closing():
     motor.stop()
     root.quit()
     root.destroy()
+    cv2.destroyAllWindows()
     print ('Be vigilant')
     sys.exit()
 
@@ -888,14 +890,54 @@ def about():
 
 def ontop():
 
-    root.wm_attributes("-topmost", not root.wm_attributes("-topmost"))
+    hwndmatch = win32gui.FindWindow(None,'Match')
+    hwndstream = win32gui.FindWindow(None,'Stream')
+    hwndconsole = win32console.GetConsoleWindow()
+
+    if checkontopvar.get()==True:
+
+        # windows on top:
+
+        if hwndconsole != 0:
+
+            rectconsole = win32gui.GetWindowRect(hwndconsole)
+            win32gui.SetWindowPos(hwndconsole, win32con.HWND_TOPMOST, rectconsole[0], rectconsole[1], rectconsole[2]-rectconsole[0], rectconsole[3]-rectconsole[1], 0) 
+
+        if hwndmatch != 0:
+            recta = win32gui.GetWindowRect(hwndmatch)   # x = rect[0]   y = rect[1]    w = rect[2] - x    h = rect[3] - y
+            win32gui.SetWindowPos(hwndmatch, win32con.HWND_TOPMOST, recta[0], recta[1], recta[2]-recta[0], recta[3]-recta[1], 0) 
+
+        if hwndstream != 0:
+            rectb = win32gui.GetWindowRect(hwndstream)
+            win32gui.SetWindowPos(hwndstream, win32con.HWND_TOPMOST, rectb[0], rectb[1], rectb[2]-rectb[0], rectb[3]-rectb[1], 0) 
+
+        root.wm_attributes("-topmost", 1) # root on top
+
+
+    if checkontopvar.get()==False:       
+
+        # windows NOT on top:
+
+        if hwndconsole != 0:
+            rectconsole = win32gui.GetWindowRect(hwndconsole)
+            win32gui.SetWindowPos(hwndconsole, win32con.HWND_NOTOPMOST, rectconsole[0], rectconsole[1], rectconsole[2]-rectconsole[0], rectconsole[3]-rectconsole[1], 0) 
+
+        if hwndmatch != 0:
+            recta = win32gui.GetWindowRect(hwndmatch)   #  x = rect[0]   y = rect[1]    w = rect[2] - x    h = rect[3] - y
+            win32gui.SetWindowPos(hwndmatch, win32con.HWND_NOTOPMOST, recta[0], recta[1], recta[2]-recta[0], recta[3]-recta[1], 0) 
+
+        if hwndstream != 0:
+            rectb = win32gui.GetWindowRect(hwndstream)
+            win32gui.SetWindowPos(hwndstream, win32con.HWND_NOTOPMOST, rectb[0], rectb[1], rectb[2]-rectb[0], rectb[3]-rectb[1], 0) 
+
+        root.wm_attributes("-topmost", 0) # root NOT on top
 
 
 def on_entry_click(event):
     if comentry.get() == 'COM Port':
        comentry.delete(0, "end") # delete all the text in the entry
-       comentry.insert(0, '') #Insert blank for user input
-       comentry.config(fg = 'black')
+       comentry.insert(0, '') #Insert blank
+       comentry.config(foreground = 'black')
 
 
 def resetGUI():
@@ -944,7 +986,8 @@ comentry.config(fg = 'gray', width=13)
 buttonserial=Button(root,height=1, width=8,text='CONNECT', command=lambda:serialstart(comtext.get(), serialbaud))
 buttonserial.grid(row = 0, column = 1, sticky=W)
 
-checkontop=Checkbutton(root,text = 'On top', command=lambda:ontop())
+checkontopvar = BooleanVar()
+checkontop=Checkbutton(root,text = 'On top', variable=checkontopvar, command=lambda:ontop())
 checkontop.grid(row = 0, column = 3)
 checkontop.select()
 
@@ -1051,6 +1094,7 @@ root.title('CHM ' + version)
 root.iconbitmap('favicon.ico')
 root.deiconify()
 resetGUI()
+ontop()
 
 ##### bodged fix for 4k resolution and higher:
 try:
