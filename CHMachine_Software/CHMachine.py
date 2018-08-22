@@ -1,4 +1,4 @@
-import cv2
+﻿import cv2
 import numpy as np
 from PIL import ImageGrab
 from tkinter import *
@@ -394,18 +394,19 @@ def autoserialstart(baud):
     print("Looking for the CH Machine, PLEASE WAIT...\n")
     for p in ports: 
         arduino_connected=False
-        try:
-            try:#try to close already existing serial connection
+
+        try:#try to close already existing serial connection
                 arduino.close()
                 while arduino.is_open:
                     pygame.time.wait(1)
-            except:
-               pass
+        except:
+            pass
 
+        try:
+                        
             print (p[0] + '...')
             arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
-            while arduino.is_open==False:
-                pygame.time.wait(1)# wait for arduino to initialize
+            pygame.time.wait(2000)# wait for arduino to initialize
 
             arduino.write(('T').encode('utf-8'))
             pygame.time.wait(150)
@@ -459,17 +460,20 @@ def serialstart(COMstring, baud):
         arduino_connected=False   
         motor.stop()   
                  
-        try:
-            if arduino.is_open:
-                arduino.close()
-                pygame.time.wait(500)            
+        
+        try:#try to close already existing serial connection
+
+            arduino.close()
+            while arduino.is_open:
+                pygame.time.wait(1)
+
         except:
-            pass
+            pass            
+        
 
         try:
             arduino = serial.Serial(('COM' + str(COMstring)), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
-            while arduino.is_open==False:
-                pygame.time.wait(1)# wait for the Arduino to initialize
+            pygame.time.wait(2000)# wait for the Arduino to initialize
             #test the connection(see Arduino code):
             arduino.write(('T').encode('utf-8'))
             pygame.time.wait(150)
@@ -1113,3 +1117,12 @@ else:
 #####
 
 root.mainloop()
+
+
+
+
+
+    
+
+    
+
