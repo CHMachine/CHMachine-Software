@@ -1283,6 +1283,7 @@ savelist=[]
 loadlist=[] 
 screenshotsizex=sizex.get()*(streamwindowssizex - 20)/100
 screenshotsizey=sizey.get()*(streamwindowssizey - 20)/100
+arrbase=np.zeros((streamwindowssizex, streamwindowssizey, 4), np.uint8) #an array of zeros for a black background
 serialbaud=9600
 arduino=None
 keysetup(os.path.abspath(os.path.dirname(__file__)) + '/setup.txt') #assign keys from setup.txt
