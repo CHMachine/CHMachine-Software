@@ -1,7 +1,7 @@
 ﻿import cv2
 import numpy as np
-from PIL import ImageGrab
 from tkinter import *
+from PIL import ImageGrab, ImageTk, Image
 import win32gui
 import win32con
 import win32console
@@ -13,10 +13,12 @@ import pygame
 from win32api import GetSystemMetrics
 import ctypes
 import glob
+import webbrowser
+import pyperclip
 
-version = '0.9.4'
+debug=False
+version = '0.9.5'
 print('CHMACHINE Ver. %s \n' %version)
-
 
 class motorclass():
     
@@ -27,13 +29,16 @@ class motorclass():
         self.result=0 
         self.colorshow=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #create an array of zeros for the black background
         self.index=0
+        self.srt_index=0
+        self.previous_srt_index=-1
         self.listindex=0
         self.timetic=0
+        self.srt_time_zero=0
         self.patternspeed=0
         self.speed='0'
         self.targetspeed='0'
         self.pinresttime=0
-        self.serialfloodlimit=5 #time(ms) between commands to limit serial flooding
+        self.serialfloodlimit=100 #time(ms) between commands to limit serial flooding
 
                     
 
@@ -48,13 +53,20 @@ class motorclass():
            
             while ((self.state==5) or (self.state==1)): #################### DETECT/DETECT SETUP
 
-                if self.state==5 and self.getspeed()!=0 and arduino_connected==True:
+                if self.state==5 and self.getspeed()!=0 and arduino_connected==True:#turn off motor when entering setup mode
 
                     self.PWMpin('0')
-                   
-                arr = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
-                arr = cv2.cvtColor(arr,cv2.COLOR_RGB2BGR)
-                self.result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED) #check if images match
+
+                try:
+                      
+                    arr = np.array(ImageGrab.grab(bbox=((pos[0]-xsize/2),(pos[1]-ysize/2),(pos[0]+xsize/2),(pos[1]+ysize/2)))) #grab image on the screen
+                    arr = cv2.cvtColor(arr,cv2.COLOR_RGB2BGR)
+                    self.result = cv2.matchTemplate(arr, arrbase, cv2.TM_CCOEFF_NORMED) #check if images match
+
+                except:
+
+                    if debug==True:
+                        print('matchTemplate error')
 
                 try: #take care of sliding too fast which result in a shape out of boundaries
 
@@ -106,12 +118,13 @@ class motorclass():
 
                     #centering and overlapping images over background:
   
-                    x_offset=int(streamwindowssizex/2 - xsize)
-                    y_offset=int(streamwindowssizey/2 - ysize) 
+                    x_offset=int((streamwindowssizex - xsize)/2)
+                    y_offset=int((streamwindowssizey - ysize)/2)
                     self.colorshow[y_offset:y_offset + arr.shape[0], x_offset:x_offset + arr.shape[1]] = arr   
                 
                 except:
-                    pass
+                    if debug==True:
+                        print('streamwindow error')
                    
                 hwndstream = win32gui.FindWindow(None,'Stream')
                 if hwndstream!=0: #if "Stream" window is open
@@ -120,25 +133,59 @@ class motorclass():
                     cv2.waitKey(1)
                 
                 if self.state==1 and arduino_connected==True:
-                    self.PWMpin(str(self.getspeed())) #Keeps the PWM pin alive(see Arduino code)
+                    self.PWMpin(str(self.getspeed())) #Keeps the PWM pin alive (see Arduino code)
                    
 
 
             
-            while self.state==2 and arduino_connected==True:#################### STOP/PAUSE
+            while (self.state==2 or self.state==6) and arduino_connected==True:#################### STOP/PAUSE
                 
+
                 self.PWMpin('0')
                 pygame.time.wait(1)
 
 
             while self.state==3 and arduino_connected==True: ##################### ALWAYSON/PATTERN
+      
 
-                if patternvar=='none':
+                if '.srt' in patternvar:    # srt sequence               
 
+                    try:
+
+                        if (pygame.time.get_ticks() >= srt_data[0][self.srt_index + 1] + self.srt_time_zero + shiftms 
+                            and srt_data[0][self.srt_index + 1] != -1): #last element of list is -1
+
+                            self.srt_index += 1
+
+                        if pygame.time.get_ticks() >= srt_data[1][self.srt_index] + self.srt_time_zero+ shiftms:
+
+                            self.PWMpin(floorspeed)
+
+                        elif pygame.time.get_ticks() >= srt_data[0][self.srt_index] + self.srt_time_zero + shiftms:
+                            
+                            if self.srt_index != self.previous_srt_index:
+
+                                print(srt_data[3][self.srt_index], srt_data[2][self.srt_index],'%')
+                                self.previous_srt_index = self.srt_index
+
+                            self.PWMpin(str(int(srt_data[2][self.srt_index] / 100* int(speed))))       
+
+                        pygame.time.wait(1)
+                        
+                    except:
+                       
+                        self.PWMpin('0')
+                        if debug==True:
+
+                            print('srt list index out of range')
+
+                elif patternvar=='none':
+                    
                     self.PWMpin(speed)
                     pygame.time.wait(1)
                 
-                else:
+                else: #patterns
+                    
                     self.listindex=namelist.index(patternvar)
 
                     if pygame.time.get_ticks()-self.timetic>=timeonvar/100:
@@ -158,7 +205,7 @@ class motorclass():
 
 
                         self.timetic=pygame.time.get_ticks()
-
+                        pygame.time.wait(1)
 
 
             while self.state==4 and arduino_connected==True:######################### PULSE
@@ -194,9 +241,11 @@ class motorclass():
     def PWMpin(self, PWM_speed): #set the Arduino pin PWM
         global arduino_connected
 
+
         try:
 
-            if (pygame.time.get_ticks()-self.pinresttime) > self.serialfloodlimit: #limit serial flooding
+            if ((pygame.time.get_ticks()-self.pinresttime) > self.serialfloodlimit #limit serial flooding
+                or PWM_speed != self.speed): 
 
                 self.speed=PWM_speed
                 arduino.write(('V' + self.speed + 'S').encode('utf-8'))
@@ -223,23 +272,73 @@ class motorclass():
 
     def pause(self):
        
-        if self.state!=2:
+        if self.state!=2 and self.state!=6:
+            
             self.savestate=self.state
             self.state=2
             
 
+        elif self.state==6:#srt stopped routine starts again
+            
+            self.srt_time_zero = pygame.time.get_ticks() - srt_data[0][self.srt_index]
+            self.state=3
+
         elif self.state==2:
+
+            try:  #restart paused SRT routine and catch up to the current position           
+
+                while pygame.time.get_ticks() >= srt_data[0][self.srt_index] + self.srt_time_zero + shiftms: 
+                    self.srt_index += 1
+            except:
+                if debug==True:
+                        print('SRT catch-up error')
+                
             self.state=self.savestate
+            
         
 
     def startdetect(self):
         self.state=1
         self.savestate=self.state
 
+    def skipsrt(self,skip):
+        try:
+
+            if self.state!=6:
+                self.savestate=self.state
+                self.state=6
+                print('GAME PAUSED') 
+             
+            if skip == 1 and self.srt_index < len(srt_data[3]):   
+
+                self.srt_index += 1 
+                print(srt_data[3][self.srt_index])
+                self.srt_time_zero = pygame.time.get_ticks() - srt_data[0][self.srt_index]
+             
+
+            elif skip == -1 and self.srt_index>0:
+
+                self.srt_index -= 1 
+                print(srt_data[3][self.srt_index])
+                self.srt_time_zero = pygame.time.get_ticks() - srt_data[0][self.srt_index]
+        except:
+
+            if debug==True:
+                        print('SRT skip error')
+            
+            
+           
+
     def alwayson_pattern(self):
-        
+        global shiftms
         self.state=3
         self.savestate=self.state
+        self.timetic=pygame.time.get_ticks()
+        self.srt_time_zero=pygame.time.get_ticks()
+        self.srt_index=0
+        self.previous_srt_index=-1
+        shiftms=0
+
 
     def pulse(self):
         self.state=4
@@ -258,6 +357,10 @@ def keysetup(file):
     global refreshbutton
     global savebutton
     global loadbutton
+    global timer_up_button
+    global timer_down_button
+    global next_srt_button
+    global previous_srt_button
 
     linelist=[]
 
@@ -269,17 +372,21 @@ def keysetup(file):
     refreshbutton='F10'
     savebutton='F11'
     loadbutton='F12'
+    timer_down_button='Numpad4'
+    timer_up_button='Numpad5'
+    next_srt_button='Numpad8'
+    previous_srt_button='Numpad7'
     ###
 
     try:
         setup  = open(file, 'r')
-
-        for x in range(100):
+        while 1:
+            
             linelist=setup.readline().replace(' ', '').strip().split('=') #read line, remove spaces and split the string a the "=" sign
-
-            if linelist[0]== '***':
-
-                break
+            
+            if (not linelist) or linelist[0]== '***': # stop when it reaches end of file or '***' string
+                setup.close()
+                break            
 
             if linelist[0] == 'Pause':
                 pausebutton=linelist[1]
@@ -302,21 +409,85 @@ def keysetup(file):
             if linelist[0] == 'Savestate':
                 savebutton=linelist[1]
 
+            if linelist[0] == 'SRT_shift_up':
+                timer_up_button=linelist[1]
 
-        setup.close() 
+            if linelist[0] == 'SRT_shif_down':
+                timer_down_button=linelist[1]
+
+            if linelist[0] == 'SRT_next_event':
+                next_srt_button=linelist[1]
+
+            if linelist[0] == 'SRT_previus_event':
+                previous_srt_button=linelist[1]
+
     except:
         print('Cannot open', file, ', loading default keys...\n')
 
     print('- HOTKEYS:\n')
-    print('Pause -------------- ',pausebutton)
-    print('Slow down ---------- ',slowdownbutton)
-    print('Speed up ----------- ',speedupbutton)
-    print('Screenshot --------- ',screenshotbutton)
-    print('Screenshot update -- ',refreshbutton)
-    print('Save state --------- ',savebutton)
-    print('Load state --------- ',loadbutton)
+    print('Pause --------------- ',pausebutton)
+    print('Slow down ----------- ',slowdownbutton)
+    print('Speed up ------------ ',speedupbutton)
+    print('Screenshot ---------- ',screenshotbutton)
+    print('Screenshot update --- ',refreshbutton)
+    print('Save state ---------- ',savebutton)
+    print('Load state ---------- ',loadbutton)
+    print('SRT shift +10ms ----- ',timer_up_button)
+    print('SRT shift -10ms ----- ',timer_down_button)
+    print('SRT next event ------ ',next_srt_button)
+    print('SRT previous event -- ',previous_srt_button)
     print('')
     print('') 
+
+
+def srtsetup():# load srt file names into the list
+
+    global namelist
+
+    filesname=glob.glob("*.srt") #find name of all .srt files in the main folder
+    for x in range(len(filesname)):
+        namelist.append(filesname[x])
+
+     
+def srtselect(selection):# load srt data
+
+    global srt_data
+    srt_time=[]
+    srt_startms=[]
+    srt_endms=[]
+    srt_speed=[]
+    srt_data=[srt_startms, srt_endms, srt_speed, srt_time]
+               
+    file=open(selection, 'r')        
+    while 1:
+
+        linelist=file.readline() 
+        if not linelist: # stop when it reaches end of file
+
+            file.close()            
+            srt_startms.append(-1)
+            break
+
+        if linelist.count('-->')>0:
+            srt_time.append(linelist)
+            linelist=linelist.replace(' ', '').replace('-', '').replace(',', ':').replace('>', ':').strip().split(':') #strip() removes end of line characters, split() method returns a list of strings after breaking the given string by the specified separator.
+            starthour=int(linelist[0])*3600000
+            startmin=int(linelist[1])*60000
+            startsec=int(linelist[2])*1000
+            startms=int(linelist[3]) + starthour + startmin + startsec
+            srt_startms.append(startms)
+
+            endhour=int(linelist[4])*3600000
+            endmin=int(linelist[5])*60000
+            endsec=int(linelist[6])*1000
+            endms=int(linelist[7]) + endhour + endmin + endsec
+            srt_endms.append(endms)
+
+            linelist=file.readline().replace(' ', '').strip()              
+            if linelist.isdigit():
+                if int(linelist)>100:
+                    linelist='100'
+                srt_speed.append(int(linelist))
 
         
 def patternsetup(file):
@@ -325,7 +496,6 @@ def patternsetup(file):
     global patternlist
 
     linelist=[]
-    namelist=[]
     patternlist=[]
     namelist.append('PATTERN')
     namelist.append('none')
@@ -334,8 +504,12 @@ def patternsetup(file):
     try:
         patterntxt = open(file, 'r')    
 
-        for x in range(1000):
-            linelist=patterntxt.readline()        
+        while 1:
+            linelist=patterntxt.readline()   
+            
+            if not linelist: # stop when it reaches end of file
+                patterntxt.close()
+                break   
 
             if linelist.strip()== '***':  #strip() removes white spaces and end of line characters
                 break
@@ -350,7 +524,7 @@ def patternsetup(file):
                     if linelist[0] != '' and linelist[1]!= '':
                         namelist.append(linelist[0][0:18])
                         stringlist=linelist[1].split(':')
-                        intlist = [int(round(float(i))) for i in stringlist]#converts list of strings into rounded integers
+                        intlist = [int(round(float(i))) for i in stringlist] #converts list of strings into rounded integers
                         patternlist.append(intlist)
                         
 
@@ -400,7 +574,9 @@ def autoserialstart(baud):
                 while arduino.is_open:
                     pygame.time.wait(1)
         except:
-            pass
+            if debug==True:
+                        print('serial connection error')
+
 
         try:
                         
@@ -468,7 +644,8 @@ def serialstart(COMstring, baud):
                 pygame.time.wait(1)
 
         except:
-            pass            
+            if debug==True:
+                print('streamwindow error')            
         
 
         try:
@@ -509,14 +686,30 @@ def onKeyDown(event):
     global arrbase
     global savelist
     global loadlist
+    global shiftms
 
 # never put any condition before event.key 
     if event.Key == ('Return'):
         
         if comentry==root.focus_get() and comentry.get()!=(''):
             serialstart(comtext.get(), serialbaud)
-       
-    
+
+    if event.Key == (next_srt_button):
+        if checkAOVar.get()==True:
+            motor.skipsrt(1)
+
+    if event.Key == (previous_srt_button):
+        if checkAOVar.get()==True:
+            motor.skipsrt(-1)
+      
+    if event.Key == (timer_up_button): 
+        print(shiftms,'shifted ms')
+        shiftms+=10
+
+    if event.Key == (timer_down_button): 
+        print(shiftms,'shifted ms')
+        shiftms-=10
+
     if event.Key == (slowdownbutton):
         
         speedint=int(speed)
@@ -558,11 +751,11 @@ def onKeyDown(event):
         if (pos != [-1,-1]):
 
             print(pos)  
-            arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
+            arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize/2),(pos[1]-ysize/2),(pos[0]+xsize/2),(pos[1]+ysize/2)))) #grab image on the screen
             arrbase = cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR)           
             base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
-            x_offset=int(streamwindowssizex/2 - xsize)
-            y_offset=int(streamwindowssizey/2 - ysize) 
+            x_offset=int((streamwindowssizex - xsize)/2)
+            y_offset=int((streamwindowssizey - ysize)/2)
             base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
             cv2.imshow('Match',base)
             cv2.namedWindow('Stream', cv2.WINDOW_AUTOSIZE)
@@ -582,7 +775,8 @@ def onKeyDown(event):
                 num=int(x.replace('save', '').replace('.npz', '')) #removes letters from string and converts number to int
                 savelist.append(num)
             except:
-                pass
+                if debug==True:
+                    print('filename error')
 
         if savelist!=[]:
             savename=('save' + str(max(savelist) + 1) + '.npz') #find the max value to add to the string
@@ -606,7 +800,8 @@ def onKeyDown(event):
                     num=int(x.replace('save', '').replace('.npz', '')) #removes letters from string and converts number to int
                     loadlist.append(num)
                 except:
-                    pass
+                    if debug==True:
+                        print('filename error')
                 
         loadlist.sort() #sort numbers in the list
 
@@ -620,7 +815,9 @@ def onKeyDown(event):
             print(loadname, 'LOADED')
         else:
             print('nothing to load')
-              
+           
+   
+
         
     return True
 
@@ -669,18 +866,18 @@ def load_state(image_arrayl, posl, xsizel, ysizel, speedl, floorspeedl, timeonva
 
         pos = [posl[0], posl[1]]
         arrbase=image_arrayl
-        sizex.set(xsizel)
-        sizey.set(ysizel)
-        xsize=xsizel*(streamwindowssizex - 20)/200
-        ysize=ysizel*(streamwindowssizey - 20)/200
-        x_offset=int(streamwindowssizex/2 - xsize)
-        y_offset=int(streamwindowssizey/2 - ysize) 
+        sizex.set(int(xsizel/2))
+        sizey.set(int(ysizel/2))
+        xsize=xsizel/2*(streamwindowssizex - 20)/100
+        ysize=ysizel/2*(streamwindowssizey - 20)/100
+        x_offset=int((streamwindowssizex - xsize)/2)
+        y_offset=int((streamwindowssizey - ysize)/2)
         base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
         base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
         cv2.imshow('Match', base)
         cv2.namedWindow('Stream', cv2.WINDOW_AUTOSIZE)
         cv2.waitKey(1)
-   
+    ###
 
 
 # TKINTER FUNCTIONS:
@@ -708,11 +905,16 @@ def alwaysONtick():
                         checkAO.select()
                         motor.alwayson_pattern()
 
+
                     else:
-                        
+                      
                         resetGUI()
-                        slidera.config(foreground='black')
-                        sliderb.config(foreground='black', label='PATTERN FREQ:')
+                        if '.srt' in patternvar:
+                            sliderb.config(foreground='gray') 
+                        else:
+                            sliderb.config(foreground='black', label='PATTERN FREQ:')
+
+                        slidera.config(foreground='black')                        
                         sliderd.config(foreground='black')
                         checkAO.select()
                         motor.alwayson_pattern()
@@ -721,13 +923,12 @@ def alwaysONtick():
                 print('No serial connection')
                 checkAO.deselect()
         except:
-            print('No serial connection')
+            print('EXCEPTION: No serial connection')
             checkAO.deselect()
 
 
 def detecttick():
      
- 
      if (pos==[-1,-1]):
             print('Position? (Press', screenshotbutton, 'to take a screenshot)')
             checkDET.deselect()
@@ -828,16 +1029,16 @@ def slidersize(value):
     global xsize
     global ysize
 
-    xsize=sizex.get()*(streamwindowssizex - 20)/200
-    ysize=sizey.get()*(streamwindowssizey - 20)/200
+    xsize=sizex.get()*(streamwindowssizex - 20)/100
+    ysize=sizey.get()*(streamwindowssizey - 20)/100
 
     if pos != [-1,-1]:
 
-        arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize),(pos[1]-ysize),(pos[0]+xsize),(pos[1]+ysize)))) #grab image on the screen
+        arrbase = np.array(ImageGrab.grab(bbox=((pos[0]-xsize/2),(pos[1]-ysize/2),(pos[0]+xsize/2),(pos[1]+ysize/2)))) #grab image on the screen
         arrbase=cv2.cvtColor(arrbase,cv2.COLOR_RGB2BGR) 
         base=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
-        x_offset=int(streamwindowssizex/2 - xsize)
-        y_offset=int(streamwindowssizey/2 - ysize) 
+        x_offset=int((streamwindowssizex - xsize)/2)
+        y_offset=int((streamwindowssizey - ysize)/2)
         base[y_offset:y_offset+arrbase.shape[0], x_offset:x_offset+arrbase.shape[1]] = arrbase #center the image array
         cv2.imshow('Match', base)
         cv2.waitKey(1)  
@@ -867,26 +1068,51 @@ def thresholdslider(value):
 
     global threshold
     threshold=int(value)/100
+      
 
-  
 def about():
     
     top = Toplevel()
     top.wm_attributes("-topmost", 1)
     top.resizable(0, 0)
     top.focus()
-    top.geometry("200x150")
+    top.geometry("350x530")
     top.title('About')
     top.iconbitmap('favicon.ico')
+
+    def copytoclpbrd():  
+        pyperclip.copy(btcaddr)        
+        msgf.configure(text='COPIED TO CLIPBOARD')
+
+    def openweb():
+        webbrowser.open_new('http://cockheromachine.blogspot.com')
 
     msg  = Message(top, width=300, text='COCK HERO MACHINE Ver.' + version)
     msga = Message(top, width=300, text='cockheromachine@gmail.com')
     msgb = Message(top, width=300, text='For more informations visit:')
-    msgc = Message(top, width=300, text='cockheromachine.blogspot.com\n')
+    msgc = Button(top, height=1, width=40, text='cockheromachine.blogspot.com', command=openweb)#Message(top, width=300, text='cockheromachine.blogspot.com\n')
+    msgd = Message(top, width=300, text='\nYou can support this project!')
+    msge = Message(top, width=300, text='Bitcoin donations address:')
+    msgf = Button(top, height=1, width=40, text=btcaddr, command=copytoclpbrd)
+    
+
+    msgg = Canvas(top, width=300, height=300, background='white')     
+    resizeqr = cv2.resize(qrimage, (250, 250), interpolation = cv2.INTER_NEAREST)
+    imagefromarray = Image.fromarray(resizeqr) 
+    imagetk = ImageTk.PhotoImage(imagefromarray) 
+    msgg.image=imagetk #to keep a reference else it shows blank
+    msgg.create_image(152, 152, image=msgg.image)
+    
+
+                
     msg.pack()
     msga.pack()
     msgb.pack()
     msgc.pack()
+    msgd.pack()
+    msge.pack()
+    msgf.pack()
+    msgg.pack()
 
     button = Button(top, height=1, width=10, text="OK", command=top.destroy)
     button.pack()
@@ -949,7 +1175,6 @@ def resetGUI():
     checkPUL.deselect()
     checkDET.deselect()
     checkSET.deselect()
-
     slidera.config(foreground='gray')
     sliderb.config(foreground='gray', label='TIME ON(ms):')
     sliderc.config(foreground='gray')
@@ -967,9 +1192,14 @@ def inverttick():
 
 
 def patternmenu(value):
-    
+
     global patternvar
+    motor.stop()
+    if '.srt' in value:
+        srtselect(value) #read data from files
+    
     patternvar=value
+    
     alwaysONtick()
   
 
@@ -998,7 +1228,9 @@ checkontop.select()
 buttonabout=Button(root,height=1, width=8,text='About...', command=lambda:about())
 buttonabout.grid(row = 0, column = 4)
 
+namelist=[]
 patternsetup('pattern.txt')#load patterns
+srtsetup()#load srt files
 patternvar='none'
 pattern_variable = StringVar()
 pattern_variable.set("PATTERNS")
@@ -1007,7 +1239,7 @@ optionmenu_widget.grid(row = 2, column=0)
 optionmenu_widget.config(width=7)
 
 checkAOVar = IntVar()
-checkAO=Checkbutton(root,text = 'ALWAYS ON', command=lambda:alwaysONtick(), variable = checkAOVar)
+checkAO=Checkbutton(root,text = 'ON', command=lambda:alwaysONtick(), variable = checkAOVar)
 checkAO.grid(row = 2, column = 1, pady=10)
 
 checkPULVar = IntVar()
@@ -1031,12 +1263,12 @@ slidera.grid(columnspan = 6,pady=5)
 speed=(str(motorspeed.get()))
 
 timeON=IntVar(value=200)
-sliderb = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=400.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
+sliderb = Scale(root, from_=20, to=1000, orient=HORIZONTAL,length=400.00, variable=timeON, label='TIME ON(ms):', command=timeONslider)
 sliderb.grid(columnspan = 7,pady=5)
 timeonvar=timeON.get()
 
 timeOFF=IntVar(value=100)
-sliderc = Scale(root, from_=10, to=1000, orient=HORIZONTAL,length=400.00, variable=timeOFF, label='TIME OFF(ms):', command=timeOFFslider)
+sliderc = Scale(root, from_=20, to=1000, orient=HORIZONTAL,length=400.00, variable=timeOFF, label='TIME OFF(ms):', command=timeOFFslider)
 sliderc.grid(columnspan = 8,pady=5)
 timeoffvar=timeOFF.get()
 
@@ -1048,12 +1280,12 @@ floorspeed=str(floorspeedVAR.get())
 sizex=IntVar(value=25)
 slidersizex = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=sizex, label='Xsize:', command=slidersize)
 slidersizex.grid(columnspan = 10,pady=5)
-xsize=sizex.get()*(streamwindowssizex - 20)/200
+xsize=sizex.get()*(streamwindowssizex - 20)/100
     
 sizey=IntVar(value=25)
 slidersizey = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=sizey, label='Ysize:', command=slidersize)
 slidersizey.grid(columnspan = 11,pady=5)
-ysize=sizey.get()*(streamwindowssizey - 20)/200
+ysize=sizey.get()*(streamwindowssizey - 20)/100
 
 thresh=IntVar(value=70)
 sliderthresh = Scale(root, from_=1, to=100, orient=HORIZONTAL,length=400.00, variable=thresh, label='THRESHOLD:', command=thresholdslider)
@@ -1079,9 +1311,10 @@ tmotordetect.start()
 pos=[-1,-1]
 savelist=[] 
 loadlist=[] 
-xsize=sizex.get()*(streamwindowssizex - 20)/200
-ysize=sizey.get()*(streamwindowssizey - 20)/200
-arrbase=np.zeros((int(xsize), int(ysize), 3), np.uint8) #an array of zeros for a black image
+shiftms=0
+xsize=sizex.get()*(streamwindowssizex - 20)/100
+ysize=sizey.get()*(streamwindowssizey - 20)/100
+arrbase=np.zeros((streamwindowssizex, streamwindowssizey, 3), np.uint8) #an array of zeros for a black background
 serialbaud=9600
 arduino=None
 keysetup('setup.txt') #assign keys from setup.txt
@@ -1104,17 +1337,1425 @@ ontop()
 try:
     ctypes.windll.user32.SetProcessDPIAware()# Make the application DPI aware to accommodate 4K resolution
 except:
-    pass
+    if debug==True:
+        print('.SetProcessDPIAware() ERROR')
 
 if GetSystemMetrics(0) < 3840 and GetSystemMetrics(1) < 2160: 
-    root.resizable(0, 0)
-    root.geometry("456x670")
+    root.resizable(1, 1)
+    root.geometry("430x670")
 
 else:
     root.resizable(1, 1)
     root.geometry("1024x1080")
 
-#####
+
+
+qrimage = np.array([[[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255]],
+
+ [[255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0]],
+
+ [[  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [  0,   0,   0],
+  [255, 255, 255],
+  [255, 255, 255],
+  [  0,   0,   0]]], dtype=np.uint8)
+btcaddr='34ajbSNuGKxz8jmN6xtU5RUDnVMynAPLf5'
 
 root.mainloop()
 

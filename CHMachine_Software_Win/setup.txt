@@ -1,10 +1,14 @@
-Pause =      Numpad0
-Slowdown =   Numpad1
-Speedup =    Numpad2
-Screenshot = F9
-Refresh =    F10
-Savestate =  F11
-Loadstate =  F12
+Pause =             Numpad0
+Slowdown =          Numpad1
+Speedup =           Numpad2
+Screenshot =        F9
+Refresh =           F10
+Savestate =         F11
+Loadstate =         F12
+SRT_shift_up =      Numpad5
+SRT_shif_down =     Numpad4
+SRT_next_event =    Numpad8
+SRT_previus_event = Numpad7
 ***
 
 Key examples:
