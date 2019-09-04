@@ -157,18 +157,39 @@ class motorclass():
 
                             self.srt_index += 1
 
-                        if pygame.time.get_ticks() >= srt_data[1][self.srt_index] + self.srt_time_zero+ shiftms:
+                        if (pygame.time.get_ticks() >= srt_data[1][self.srt_index] + self.srt_time_zero+ shiftms):
 
-                            self.PWMpin(floorspeed)
+                            if srt_data[0][self.srt_index+1] != -1:                      
+                                self.PWMpin(floorspeed)
+
+                            else:# stops when reaches end of list 
+                                self.PWMpin('0')
+
 
                         elif pygame.time.get_ticks() >= srt_data[0][self.srt_index] + self.srt_time_zero + shiftms:
                             
                             if self.srt_index != self.previous_srt_index:
-
-                                print(srt_data[3][self.srt_index], srt_data[2][self.srt_index],'%')
+                                
                                 self.previous_srt_index = self.srt_index
 
-                            self.PWMpin(str(int(srt_data[2][self.srt_index] / 100* int(speed))))       
+                                if srt_data[2][self.srt_index].replace(' ', '').isdigit():
+                                    print(srt_data[3][self.srt_index], srt_data[2][self.srt_index],'%')
+                                else:
+                                    print(srt_data[3][self.srt_index], srt_data[2][self.srt_index])
+                                    self.PWMpin('0')
+
+
+                            if srt_data[2][self.srt_index].replace(' ', '').isdigit():
+                                
+                                if int(srt_data[2][self.srt_index]) >= 0 and int(srt_data[2][self.srt_index]) <= 100:
+                                    self.PWMpin(str(int(srt_data[2][self.srt_index]) / 100* int(speed)))   
+                                                                    
+
+                                elif int(srt_data[2][self.srt_index]) > 100:
+                                    self.PWMpin(str(speed))
+                                  
+                                elif int(srt_data[2][self.srt_index]) < 0:
+                                    self.PWMpin(floorspeed)
 
                         pygame.time.wait(1)
                         
@@ -483,11 +504,8 @@ def srtselect(selection):# load srt data
             endms=int(linelist[7]) + endhour + endmin + endsec
             srt_endms.append(endms)
 
-            linelist=file.readline().replace(' ', '').strip()              
-            if linelist.isdigit():
-                if int(linelist)>100:
-                    linelist='100'
-                srt_speed.append(int(linelist))
+            linelist=file.readline().strip()             
+            srt_speed.append(linelist)
 
         
 def patternsetup(file):
