@@ -12,6 +12,7 @@ import serial.tools.list_ports
 import ctypes
 import glob
 from PIL import ImageTk, Image
+import sys
 with open(os.devnull, 'w') as f: ###shutting up pygame silliness
     oldstdout = sys.stdout# disable stdout
     sys.stdout = f
@@ -449,10 +450,10 @@ def autoserialstart(baud):
 
             print (p[0] + '...')
             arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # always a good idea to specify a timeout in case we send bad data
-            pygame.time.wait(2000)# wait for Arduino to initialize
+            pygame.time.wait(3000)# wait for Arduino to initialize
 
             arduino.write(('T').encode('utf-8'))
-            pygame.time.wait(150)# wait for a response from Arduino
+            pygame.time.wait(1500)# wait for a response from Arduino
             line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
             if line.find('connOK')!=-1:
                 print("CHM CONNECTED!")
