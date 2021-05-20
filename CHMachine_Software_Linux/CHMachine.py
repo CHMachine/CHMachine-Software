@@ -453,7 +453,7 @@ def autoserialstart(baud):
             pygame.time.wait(3000)# wait for Arduino to initialize
 
             arduino.write(('T').encode('utf-8'))
-            pygame.time.wait(1500)# wait for a response from Arduino
+            pygame.time.wait(150)# wait for a response from Arduino
             line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
             if line.find('connOK')!=-1:
                 print("CHM CONNECTED!")
@@ -513,11 +513,11 @@ def serialstart(COMstring, baud):
 
         try:
             arduino = serial.Serial(COMstring, baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
-            pygame.time.wait(2000)# wait for the Arduino to initialize
+            pygame.time.wait(4000)# wait for the Arduino to initialize
             
             #test the connection(see Arduino code):
             arduino.write(('T').encode('utf-8'))
-            pygame.time.wait(150)
+            pygame.time.wait(300)
             line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
             if line.find('connOK')!=-1:
                 print("CHM CONNECTED!")
