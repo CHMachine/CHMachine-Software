@@ -1,4 +1,4 @@
-Cock Hero Machine Ver. 0.9.6
+Cock Hero Machine Ver. 0.9.7
 
 
 -Keyboard Shortcuts(*):
