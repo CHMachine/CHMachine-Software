@@ -11,13 +11,12 @@
 #include <SoftwareSerial.h>
 int rxPin = 2;
 int txPin = 3;
-SoftwareSerial mySerial(rxPin, txPin); //rx,tx
+SoftwareSerial mySerial(rxPin, txPin);
 int PWMPin = 5;
 
-//long unsigned timer = 0;
-String softserial_str;//string buffer for softserial
-String str;
-String command_str;
+String softserial_str; //string buffer for softserial
+String str; //to store the command from serial
+String command_str;//to manipulate the command from serial
 String magnitude_str;
 String timeinterval_str;
 String magnituderamp_str;
@@ -26,12 +25,12 @@ float magnitudenow = 0;
 float timeinterval;
 float magnituderamp;
 int PWMspeed;
-int CHM_timelimit = 200;
-int TCODE_timelimit = 1000;
+int CHM_timelimit = 200; //timelimit to stop the motor if no commands are received
+int TCODE_timelimit = 1000; //timelimit to stop the motor if no commands are received
 long unsigned TICms;
 long unsigned timezero;
-long unsigned CHM_timer;
-long unsigned TCODE_timer;
+long unsigned CHM_timer; //time(ms)since the last CHM command
+long unsigned TCODE_timer; //time(ms)since the last TCODE command
 bool CHM_mode = false;
 bool TCODE_mode = false;
 
