@@ -6,10 +6,10 @@ Screenshot =        		F9
 Refresh =           		F10
 Savestate =         		F11
 Loadstate =         		F12
-SRT_shift_up =      		Numpad5
-SRT_shif_down =     		Numpad4
-SRT_next_event =    		Numpad8
-SRT_previus_event = 		Numpad7
+SRT_shift_up =      		
+SRT_shif_down =     		
+SRT_next_event =    		
+SRT_previus_event = 		
 
 @Preferences setup:
 Speedup_button_step(0-255) =	10
@@ -17,7 +17,7 @@ Speeddown_button_step(0-255) = 	10
 Detect_Window_size = 		220
 
 @System setup:
-Serial_Baud_Rate =		9600
+Serial_Baud_Rate =		115200
 Debug_mode(Bool) =		0
 
 ***

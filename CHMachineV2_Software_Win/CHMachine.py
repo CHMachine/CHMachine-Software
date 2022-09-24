@@ -15,7 +15,7 @@ import ctypes
 import glob
 import webbrowser
 
-version = '0.9.6'
+version = '0.9.7'
 print('CHMACHINE Ver. %s \n' %version)
 
 class motorclass():
@@ -267,7 +267,7 @@ class motorclass():
                 or PWM_speed != self.speed): 
 
                 self.speed=PWM_speed
-                arduino.write(('V' + self.speed + 'S').encode('utf-8'))
+                arduino.write(('V' + self.speed + 'S\n').encode('utf-8'))
                 self.pinresttime=pygame.time.get_ticks()
 
         except serial.SerialTimeoutException: 
@@ -409,7 +409,7 @@ def init_setup(file):
     speeddown_step=10
     streamwindowssizex=220
     streamwindowssizey=220
-    serialbaud=9600
+    serialbaud=115200
     debug=False
 
 
@@ -491,10 +491,6 @@ def init_setup(file):
     print('Screenshot update --- ',refreshbutton)
     print('Save state ---------- ',savebutton)
     print('Load state ---------- ',loadbutton)
-    print('SRT shift +10ms ----- ',timer_up_button)
-    print('SRT shift -10ms ----- ',timer_down_button)
-    print('SRT next event ------ ',next_srt_button)
-    print('SRT previous event -- ',previous_srt_button)
     print('')
     print('') 
 
@@ -638,10 +634,10 @@ def autoserialstart(baud):
                         
             print (p[0] + '...')
             arduino = serial.Serial(p[0], baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
-            pygame.time.wait(3000)# wait for arduino to initialize
+            pygame.time.wait(4000)# wait for arduino to initialize
 
-            arduino.write(('T').encode('utf-8'))
-            pygame.time.wait(150)
+            arduino.write(('CHMT\n').encode('utf-8'))
+            pygame.time.wait(500)
             line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
             if line.find('connOK')!=-1:
                 print("CHM CONNECTED!")
@@ -707,8 +703,8 @@ def serialstart(COMstring, baud):
             arduino = serial.Serial(('COM' + str(COMstring)), baud, timeout = 1, write_timeout = 1) # 2=Com3 on windows always a good idea to specify a timeout in case we send bad data
             pygame.time.wait(4000)# wait for the Arduino to initialize
             #test the connection(see Arduino code):
-            arduino.write(('T').encode('utf-8'))
-            pygame.time.wait(300)
+            arduino.write(('CHMT\n').encode('utf-8'))
+            pygame.time.wait(500)
             line = arduino.read(arduino.inWaiting()).decode(encoding='UTF-8',errors='replace')   
             if line.find('connOK')!=-1:
                 print("CHM CONNECTED!")

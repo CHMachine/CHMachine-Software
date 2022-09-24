@@ -1,0 +1,34 @@
+@HOTKEYS setup:
+Pause =      P_Insert
+Slowdown =   P_End
+Speedup =    P_Down
+Screenshot = F9
+Refresh =    F10
+Savestate =  F11
+Loadstate =  F12
+
+@Preferences setup:
+Speedup_button_step(0-255) =	10
+Speeddown_button_step(0-255) =	10 
+Detect_Window_size = 		220
+
+@System setup:
+Serial_Baud_Rate =		115200
+
+
+***
+
+Key examples:
+1,2,3...
+A,B,C...
+F1,F2,F3...
+Numpad0,Numpad1,Numpad2...
+Right,Left,Down,Up
+Space
+Back
+Tab
+Rshift
+Lshift
+Rcontrol
+Lcontrol
+(leave blank to disable key)

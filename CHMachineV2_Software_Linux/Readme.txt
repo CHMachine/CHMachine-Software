@@ -1,4 +1,4 @@
-Cock Hero Machine Ver. 0.9.6
+Cock Hero Machine Ver. 0.9.7l
 
 
 -Keyboard Shortcuts(*):
@@ -9,12 +9,7 @@ Speedup motor ------------------------------------ Numpad2
 Take Screenshot from mouse position -------------- F9
 Refresh screenshot ------------------------------- F10
 Save state to files ------------------------------ F11
-Load state from files (from Last file To First) -- F12
-SRT shift time +10ms ----------------------------- Numpad4
-SRT shift time -10ms ----------------------------- Numpad5
-SRT next event (game pause when activated) ------- Numpad8
-SRT previous event (game pause when activated) --- Numpad7
-
+Load state from files(from Last file To First) --- F12
 
 (*)Shortcut keys can be modified by editing setup.txt
 
