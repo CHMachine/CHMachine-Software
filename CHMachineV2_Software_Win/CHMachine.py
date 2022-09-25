@@ -148,21 +148,23 @@ class motorclass():
 
                 if '.srt' in patternvar:    # srt sequence               
 
-                    try:
+                    try:                       
 
                         if (pygame.time.get_ticks() >= srt_data[0][self.srt_index + 1] + self.srt_time_zero + shiftms 
                             and srt_data[0][self.srt_index + 1] != -1): #last element of list is -1
 
                             self.srt_index += 1
 
-                        if (pygame.time.get_ticks() >= srt_data[1][self.srt_index] + self.srt_time_zero+ shiftms):
+                        if (pygame.time.get_ticks() >= srt_data[1][self.srt_index] + self.srt_time_zero + shiftms):
 
                             if srt_data[0][self.srt_index+1] != -1:                      
                                 self.PWMpin(floorspeed)
 
                             else:# stops when reaches end of list 
-                                self.PWMpin('0')
-
+                                self.PWMpin('0')  
+                                if (loop_srt==True):                                                             
+                                    self.srt_index=0
+                                    self.srt_time_zero = pygame.time.get_ticks()
 
                         elif pygame.time.get_ticks() >= srt_data[0][self.srt_index] + self.srt_time_zero + shiftms:
                             
@@ -382,6 +384,7 @@ def init_setup(file):
     global previous_srt_button
     global speedup_step
     global speeddown_step
+    global loop_srt
     global streamwindowssizex
     global streamwindowssizey
     global serialbaud
@@ -461,6 +464,9 @@ def init_setup(file):
             
             if linelist[0] == 'Speeddown_button_step(0-255)':
                 speeddown_step=int(linelist[1])
+
+            if linelist[0] == 'Loop_srt(Bool)':
+                loop_srt=bool(int(linelist[1]))
 
             if linelist[0] == 'Detect_Window_size':
                 streamwindowssizex=int(linelist[1])

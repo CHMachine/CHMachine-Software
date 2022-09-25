@@ -15,6 +15,7 @@ SRT_previus_event =
 Speedup_button_step(0-255) =	10
 Speeddown_button_step(0-255) = 	10 
 Detect_Window_size = 		220
+Loop_srt(Bool) =		0
 
 @System setup:
 Serial_Baud_Rate =		115200

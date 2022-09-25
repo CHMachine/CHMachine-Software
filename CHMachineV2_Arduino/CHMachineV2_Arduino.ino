@@ -39,6 +39,7 @@ void setup() {
   pinMode(PWMPin, OUTPUT); // initialize the digital pin as an output.
   pinMode(rxPin, INPUT);//softserial rx pin
   pinMode(txPin, OUTPUT);//softserial tx pin
+  pinMode(LED_BUILTIN, OUTPUT);
   timezero = millis();
   CHM_timer = millis();
   TCODE_timer = millis();
@@ -203,5 +204,12 @@ void loop() { // the loop routine runs over and over again forever:
   }
 
   analogWrite(PWMPin, PWMspeed);
+  
+  if (PWMspeed > 0){
+    digitalWrite(LED_BUILTIN, HIGH);
+  }
+  else {
+    digitalWrite(LED_BUILTIN, LOW);
+  }
 
 }
